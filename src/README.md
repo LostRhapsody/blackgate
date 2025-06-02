@@ -17,6 +17,7 @@ Status:
 - The HTTP request is executed and the response is returned to the client.
 - Black Gate can also list the route records in the DB.
 - This is all controlled via a CLI
+- Dockerfile included for containerization to self-host
 
 Example (Using httpbin.org):
 ```bash
@@ -49,3 +50,7 @@ Next Steps:
 - A web based user interface with HTMX for speed and simplicity.
 - Support for all HTTP methods
 - Better Payload delivery, currently the payload is expecting a string, so JSON needs to be stringified to be passed in correctly (in the example, the payload we're sending is the word "test")
+
+Long Term Goals:
+- Black Gate will be self-hosted or hosted by "Black Gate" in the cloud for a subscription fee.
+- Payment Processing Gateway centric features, with the goal of providing flexible payment provider support to B2B and retail websites.

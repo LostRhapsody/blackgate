@@ -5,7 +5,6 @@ mod oauth_test_server;
 mod tests;
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
-use sqlx::sqlite::SqliteValueRef;
 use sqlx::{Row, sqlite::SqlitePool};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

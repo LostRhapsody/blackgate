@@ -254,6 +254,8 @@ enum AuthType {
     None,
     ApiKey,
     OAuth2,
+    Jwt,
+    Oidc,
 }
 
 impl AuthType {
@@ -262,6 +264,8 @@ impl AuthType {
         match s.to_lowercase().as_str() {
             "api-key" | "apikey" => AuthType::ApiKey,
             "oauth2" | "oauth" => AuthType::OAuth2,
+            "jwt" => AuthType::Jwt,
+            "oidc" => AuthType::Oidc,
             "none" | "" => AuthType::None,
             _ => {
                 eprintln!("Unknown auth type '{}', defaulting to None", s);
@@ -276,6 +280,8 @@ impl AuthType {
             AuthType::None => "none",
             AuthType::ApiKey => "api-key",
             AuthType::OAuth2 => "oauth2",
+            AuthType::Jwt => "jwt",
+            AuthType::Oidc => "oidc",
         }
     }
 
@@ -285,6 +291,8 @@ impl AuthType {
             AuthType::None => "No".to_string(),
             AuthType::ApiKey => "API Key".to_string(),
             AuthType::OAuth2 => "OAuth 2.0".to_string(),
+            AuthType::Jwt => "JWT".to_string(),
+            AuthType::Oidc => "OIDC".to_string(),
         }
     }
 }
@@ -819,6 +827,18 @@ async fn apply_authentication(
                     .body(axum::body::Body::from("OAuth configuration is incomplete"))
                     .unwrap())
             }
+        }
+        AuthType::Jwt => {
+            // JWT authentication logic would go here
+            debug!("Using JWT authentication for route {}", path);
+            // For now, just return the builder without modification
+            Ok(builder)
+        }
+        AuthType::Oidc => {
+            // OIDC authentication logic would go here
+            debug!("Using OIDC authentication for route {}", path);
+            // For now, just return the builder without modification
+            Ok(builder)
         }
         AuthType::None => {
             debug!("No authentication required for route {}", path);

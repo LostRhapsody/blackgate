@@ -743,7 +743,7 @@ async fn main() {
 
     // Create routes table if it doesn't exist
     sqlx::query(
-        "drop table if exists routes;
+        "
         CREATE TABLE IF NOT EXISTS routes (
             path TEXT PRIMARY KEY,
             auth_type TEXT,
@@ -774,11 +774,11 @@ async fn main() {
         );
         
         INSERT INTO routes (path, upstream, auth_type, auth_value, allowed_methods) 
-        VALUES ('/warehouse', 'https://httpbin.org/post', 'api-key', 'Bearer warehouse_key','POST');
+        VALUES ('/post-test', 'https://httpbin.org/post', 'api-key', 'Bearer warehouse_key','POST');
         INSERT INTO routes (path, upstream, auth_type, auth_value, allowed_methods) 
-        VALUES ('/warehouse-get', 'https://httpbin.org/post', 'api-key', 'Bearer warehouse_key','GET');
+        VALUES ('/get-test', 'https://httpbin.org/post', 'api-key', 'Bearer warehouse_key','GET');
         INSERT INTO routes (path, upstream, auth_type, auth_value, allowed_methods) 
-        VALUES ('/warehouse-none', 'https://httpbin.org/post', 'api-key', 'Bearer warehouse_key','');
+        VALUES ('/no-method-test', 'https://httpbin.org/post', 'api-key', 'Bearer warehouse_key','');
         INSERT INTO routes (path, upstream, auth_type, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope) 
         VALUES ('/oauth-test', 'https://httpbin.org/anything', 'oauth2', 'GET', 'http://localhost:3001/oauth/token', 'test_client', 'test_secret', 'read:all');
         ",

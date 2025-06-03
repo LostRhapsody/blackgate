@@ -9,6 +9,9 @@ use sqlx::{Row, sqlite::SqlitePool};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::time::{Duration, Instant};
+use tracing::{info, warn, error, debug};
+use chrono::{DateTime, Utc};
+use uuid::Uuid;
 
 /// Structure to store OAuth tokens with expiration
 struct OAuthTokenCache {
@@ -82,6 +85,14 @@ enum Commands {
     /// List all routes loaded into the API gateway
     #[command(name = "list-routes")]
     ListRoutes,
+    /// View request metrics and statistics
+    #[command(name = "metrics")]
+    Metrics {
+        #[arg(long, help = "Number of recent requests to show")]
+        limit: Option<i32>,
+        #[arg(long, help = "Show statistics summary")]
+        stats: bool,
+    },
     /// Start the API gateway server
     #[command(name = "start")]
     Start,
@@ -98,6 +109,63 @@ enum Commands {
 struct AppState {
     db: SqlitePool,
     token_cache: Arc<Mutex<OAuthTokenCache>>,
+}
+
+/// Metrics data structure for tracking request/response information
+#[derive(Debug, Serialize, Deserialize)]
+struct RequestMetrics {
+    id: String,
+    path: String,
+    method: String,
+    request_timestamp: DateTime<Utc>,
+    response_timestamp: Option<DateTime<Utc>>,
+    duration_ms: Option<i64>,
+    request_size_bytes: i64,
+    response_size_bytes: Option<i64>,
+    response_status_code: Option<u16>,
+    upstream_url: Option<String>,
+    auth_type: String,
+    client_ip: Option<String>,
+    user_agent: Option<String>,
+    error_message: Option<String>,
+}
+
+impl RequestMetrics {
+    fn new(path: String, method: String, request_size: i64) -> Self {
+        RequestMetrics {
+            id: Uuid::new_v4().to_string(),
+            path,
+            method,
+            request_timestamp: Utc::now(),
+            response_timestamp: None,
+            duration_ms: None,
+            request_size_bytes: request_size,
+            response_size_bytes: None,
+            response_status_code: None,
+            upstream_url: None,
+            auth_type: "none".to_string(),
+            client_ip: None,
+            user_agent: None,
+            error_message: None,
+        }
+    }
+
+    fn complete_request(&mut self, response_size: i64, status_code: u16, upstream_url: Option<String>, auth_type: String) {
+        let now = Utc::now();
+        self.response_timestamp = Some(now);
+        self.duration_ms = Some((now - self.request_timestamp).num_milliseconds());
+        self.response_size_bytes = Some(response_size);
+        self.response_status_code = Some(status_code);
+        self.upstream_url = upstream_url;
+        self.auth_type = auth_type;
+    }
+
+    fn set_error(&mut self, error: String) {
+        let now = Utc::now();
+        self.response_timestamp = Some(now);
+        self.duration_ms = Some((now - self.request_timestamp).num_milliseconds());
+        self.error_message = Some(error);
+    }
 }
 
 /// Token request structure for OAuth
@@ -175,6 +243,39 @@ async fn root() -> &'static str {
     "Welcome to Black Gate"
 }
 
+/// Store request metrics in the database
+async fn store_metrics(pool: &SqlitePool, metrics: &RequestMetrics) {
+    let result = sqlx::query(
+        "INSERT INTO request_metrics (
+            id, path, method, request_timestamp, response_timestamp, duration_ms,
+            request_size_bytes, response_size_bytes, response_status_code,
+            upstream_url, auth_type, client_ip, user_agent, error_message
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    .bind(&metrics.id)
+    .bind(&metrics.path)
+    .bind(&metrics.method)
+    .bind(metrics.request_timestamp.to_rfc3339())
+    .bind(metrics.response_timestamp.map(|t| t.to_rfc3339()))
+    .bind(metrics.duration_ms)
+    .bind(metrics.request_size_bytes)
+    .bind(metrics.response_size_bytes)
+    .bind(metrics.response_status_code)
+    .bind(&metrics.upstream_url)
+    .bind(&metrics.auth_type)
+    .bind(&metrics.client_ip)
+    .bind(&metrics.user_agent)
+    .bind(&metrics.error_message)
+    .execute(pool)
+    .await;
+
+    if let Err(e) = result {
+        error!("Failed to store metrics: {}", e);
+    } else {
+        debug!("Stored metrics for request {}", metrics.id);
+    }
+}
+
 /// Get OAuth token from token endpoint
 async fn get_oauth_token(
     token_url: &str,
@@ -182,7 +283,7 @@ async fn get_oauth_token(
     client_secret: &str,
     scope: &str,
 ) -> Result<(String, u64), Box<dyn std::error::Error + Send + Sync>> {
-    println!("Requesting OAuth token from {}", token_url);
+    info!("Requesting OAuth token from {}", token_url);
     let client = reqwest::Client::builder().use_rustls_tls().build()?;
     let request_body = TokenRequest {
         grant_type: "client_credentials".into(),
@@ -203,11 +304,12 @@ async fn get_oauth_token(
         Ok(resp) => {
             let token_response: OAuthTokenResponse = resp.json::<OAuthTokenResponse>().await?;
             let expires_in = token_response.expires_in.unwrap_or(3600); // Default to 1 hour
-
+            debug!("Successfully received OAuth token, expires in {}s", expires_in);
             Ok((token_response.access_token, expires_in))
         }
         Err(e) => {
-            return Err(format!("OAuth token request failed: {}", e).into());
+            error!("OAuth token request failed: {}", e);
+            Err(format!("OAuth token request failed: {}", e).into())
         }
     }
 }
@@ -239,6 +341,18 @@ async fn handle_request_core(
     path: String,
     body: Option<String>,
 ) -> axum::response::Response {
+    // Initialize metrics
+    let request_size = body.as_ref().map_or(0, |b| b.len() as i64);
+    let mut metrics = RequestMetrics::new(path.clone(), method.to_string(), request_size);
+    
+    info!(
+        request_id = %metrics.id,
+        method = %method,
+        path = %path,
+        request_size_bytes = request_size,
+        "Incoming request"
+    );
+
     // Query the database for the route
     let row = sqlx::query("SELECT upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope FROM routes WHERE path = ?")
         .bind(&path)
@@ -246,7 +360,7 @@ async fn handle_request_core(
         .await
         .expect("Database query failed");
 
-    match row {
+    let response = match row {
         Some(row) => {
             // confirm the method is allowed
             let allowed_methods: String = row.get("allowed_methods");
@@ -255,6 +369,17 @@ async fn handle_request_core(
             if !allowed_methods.is_empty() {
                 let allowed_methods: Vec<&str> = allowed_methods.split(',').collect();
                 if !allowed_methods.contains(&method.as_str()) {
+                    warn!(
+                        request_id = %metrics.id,
+                        method = %method,
+                        path = %path,
+                        allowed_methods = %row.get::<String, _>("allowed_methods"),
+                        "Method not allowed"
+                    );
+                    
+                    metrics.set_error("Method Not Allowed".to_string());
+                    store_metrics(&state.db, &metrics).await;
+                    
                     return axum::response::Response::builder()
                         .status(405)
                         .body(axum::body::Body::from("Method Not Allowed"))
@@ -274,6 +399,13 @@ async fn handle_request_core(
                 oauth_scope: row.get("oauth_scope"),
             };
 
+            info!(
+                request_id = %metrics.id,
+                upstream = %route_config.upstream,
+                auth_type = %route_config.auth_type.to_string(),
+                "Routing to upstream"
+            );
+
             // Create the request builder           
             let client = reqwest::Client::new();
             let builder = client.request(method, &route_config.upstream);
@@ -288,7 +420,18 @@ async fn handle_request_core(
             .await
             {
                 Ok(builder) => builder,
-                Err(response) => return response,
+                Err(response) => {
+                    error!(
+                        request_id = %metrics.id,
+                        path = %path,
+                        "Authentication failed"
+                    );
+                    
+                    metrics.set_error("Authentication failed".to_string());
+                    store_metrics(&state.db, &metrics).await;
+                    
+                    return response;
+                }
             };
 
             // Add request body if present
@@ -298,21 +441,97 @@ async fn handle_request_core(
                 builder
             };
 
-            // Send the request
-            let response = builder.send().await.expect("Upstream request failed");
+            // Record start time for upstream request
+            let upstream_start = Instant::now();
 
+            // Send the request
+            let response = match builder.send().await {
+                Ok(response) => response,
+                Err(e) => {
+                    error!(
+                        request_id = %metrics.id,
+                        upstream = %route_config.upstream,
+                        error = %e,
+                        "Upstream request failed"
+                    );
+                    
+                    metrics.set_error(format!("Upstream request failed: {}", e));
+                    store_metrics(&state.db, &metrics).await;
+                    
+                    return axum::response::Response::builder()
+                        .status(502)
+                        .body(axum::body::Body::from("Bad Gateway"))
+                        .unwrap();
+                }
+            };
+
+            let upstream_duration = upstream_start.elapsed();
             let response_status = response.status();
-            let response_body = response.text().await.expect("Failed to read response body");
+            
+            let response_body = match response.text().await {
+                Ok(body) => body,
+                Err(e) => {
+                    error!(
+                        request_id = %metrics.id,
+                        error = %e,
+                        "Failed to read response body"
+                    );
+                    
+                    metrics.set_error(format!("Failed to read response body: {}", e));
+                    store_metrics(&state.db, &metrics).await;
+                    
+                    return axum::response::Response::builder()
+                        .status(502)
+                        .body(axum::body::Body::from("Bad Gateway"))
+                        .unwrap();
+                }
+            };
+
+            let response_size = response_body.len() as i64;
+            
+            // Complete metrics tracking
+            metrics.complete_request(
+                response_size,
+                response_status.as_u16(),
+                Some(route_config.upstream.clone()),
+                route_config.auth_type.to_string().to_string()
+            );
+
+            info!(
+                request_id = %metrics.id,
+                response_status = response_status.as_u16(),
+                response_size_bytes = response_size,
+                upstream_duration_ms = upstream_duration.as_millis(),
+                total_duration_ms = metrics.duration_ms.unwrap_or(0),
+                "Request completed successfully"
+            );
+
+            // Store metrics in database
+            store_metrics(&state.db, &metrics).await;
+
             axum::response::Response::builder()
                 .status(response_status)
                 .body(response_body.into())
                 .unwrap()
         }
-        None => axum::response::Response::builder()
-            .status(404)
-            .body(axum::body::Body::from("No route found"))
-            .unwrap(),
-    }
+        None => {
+            warn!(
+                request_id = %metrics.id,
+                path = %path,
+                "Route not found"
+            );
+            
+            metrics.set_error("Route not found".to_string());
+            store_metrics(&state.db, &metrics).await;
+            
+            axum::response::Response::builder()
+                .status(404)
+                .body(axum::body::Body::from("No route found"))
+                .unwrap()
+        }
+    };
+
+    response
 }
 
 /// Start the API gateway server, waits for incoming requests
@@ -335,10 +554,8 @@ async fn start_server(pool: SqlitePool) {
         .with_state(app_state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    println!(
-        "Black Gate running on http://{}",
-        listener.local_addr().unwrap()
-    );
+    let addr = listener.local_addr().unwrap();
+    info!("Black Gate running on http://{}", addr);
     axum::serve(listener, app).await.unwrap();
 }
 
@@ -365,20 +582,18 @@ async fn start_server_with_shutdown(
         .with_state(app_state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    println!(
-        "Black Gate running on http://{}",
-        listener.local_addr().unwrap()
-    );
+    let addr = listener.local_addr().unwrap();
+    info!("Black Gate running on http://{}", addr);
 
     let server = axum::serve(listener, app).with_graceful_shutdown(async {
         shutdown_rx.await.ok();
-        println!("Black Gate server shutting down...");
+        info!("Black Gate server shutting down...");
     });
 
     if let Err(err) = server.await {
-        eprintln!("Black Gate server error: {}", err);
+        error!("Black Gate server error: {}", err);
     }
-    println!("Black Gate server shutdown complete");
+    info!("Black Gate server shutdown complete");
 }
 
 /// Start the OAuth test server and the main Black Gate server, used for oAuth testing
@@ -398,10 +613,10 @@ async fn start_oauth_test_server(
     });
 
     // Wait for Ctrl+C signal
-    println!("Both servers are running. Press Ctrl+C to shutdown...");
+    info!("Both servers are running. Press Ctrl+C to shutdown...");
     match tokio::signal::ctrl_c().await {
         Ok(()) => {
-            println!("Received shutdown signal, stopping servers...");
+            info!("Received shutdown signal, stopping servers...");
 
             // Shutdown both servers gracefully
             let _ = oauth_shutdown_tx.send(());
@@ -410,10 +625,10 @@ async fn start_oauth_test_server(
             // Wait for the server to shut down properly
             let _ = server_handle.await;
 
-            println!("All servers shutdown complete");
+            info!("All servers shutdown complete");
         }
         Err(err) => {
-            eprintln!("Failed to listen for shutdown signal: {}", err);
+            error!("Failed to listen for shutdown signal: {}", err);
         }
     }
 }
@@ -428,10 +643,10 @@ async fn apply_authentication(
     match route_config.auth_type {
         AuthType::ApiKey => {
             if let Some(auth_value) = &route_config.auth_value {
-                println!("Using API key authentication for route {}", path);
+                debug!("Using API key authentication for route {}", path);
                 Ok(builder.header("Authorization", auth_value))
             } else {
-                eprintln!("Missing API key for route {}", path);
+                error!("Missing API key for route {}", path);
                 Err(axum::response::Response::builder()
                     .status(500)
                     .body(axum::body::Body::from("API key is required"))
@@ -439,7 +654,7 @@ async fn apply_authentication(
             }
         }
         AuthType::OAuth2 => {
-            println!("Using OAuth 2.0 authentication for route {}", path);
+            debug!("Using OAuth 2.0 authentication for route {}", path);
             // Check for required OAuth fields
             if let (
                 Some(token_url),
@@ -455,29 +670,32 @@ async fn apply_authentication(
                 // Create a cache key for this specific OAuth configuration
                 let cache_key =
                     format!("{}:{}:{}:{}", token_url, client_id, client_secret, scope);
-                println!("Using OAuth token cache key: {}", cache_key);
+                debug!("Using OAuth token cache key: {}", cache_key);
 
                 // Try to get token from cache
                 let token = {
                     let token_cache = token_cache.lock().unwrap();
                     token_cache.get_token(&cache_key)
                 };
-                println!("Cached token: {:?}", token);
 
                 let token = match token {
-                    Some(token) => token,
+                    Some(token) => {
+                        debug!("Using cached OAuth token for route {}", path);
+                        token
+                    }
                     None => {
+                        info!("Fetching new OAuth token for route {}", path);
                         // No valid token in cache, fetch a new one
                         match get_oauth_token(token_url, client_id, client_secret, scope).await {
                             Ok((token, expires_in)) => {
-                                println!("Fetched new OAuth token: {}", token);
+                                info!("Successfully fetched OAuth token for route {}, expires in {}s", path, expires_in);
                                 // Store the token in cache
                                 let mut token_cache = token_cache.lock().unwrap();
                                 token_cache.set_token(cache_key, token.clone(), expires_in);
                                 token
                             }
                             Err(e) => {
-                                eprintln!("OAuth token error: {:?}", e);
+                                error!("OAuth token error for route {}: {:?}", path, e);
                                 return Err(axum::response::Response::builder()
                                     .status(500)
                                     .body(axum::body::Body::from(
@@ -492,7 +710,7 @@ async fn apply_authentication(
                 // Add the token to the request
                 Ok(builder.header("Authorization", format!("Bearer {}", token)))
             } else {
-                eprintln!("Missing OAuth configuration for route {}", path);
+                error!("Missing OAuth configuration for route {}", path);
                 Err(axum::response::Response::builder()
                     .status(500)
                     .body(axum::body::Body::from("OAuth configuration is incomplete"))
@@ -500,7 +718,7 @@ async fn apply_authentication(
             }
         }
         AuthType::None => {
-            println!("No authentication required for route {}", path);
+            debug!("No authentication required for route {}", path);
             Ok(builder)
         }
     }
@@ -508,6 +726,16 @@ async fn apply_authentication(
 
 #[tokio::main]
 async fn main() {
+    // Initialize tracing
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "blackgate=info,tower_http=debug".into()),
+        )
+        .init();
+
+    info!("Starting Black Gate API Gateway");
+
     // Initialize SQLite database
     let pool = SqlitePool::connect("sqlite://blackgate.db")
         .await
@@ -527,6 +755,24 @@ async fn main() {
             oauth_client_secret TEXT,
             oauth_scope TEXT
         );
+        
+        CREATE TABLE IF NOT EXISTS request_metrics (
+            id TEXT PRIMARY KEY,
+            path TEXT NOT NULL,
+            method TEXT NOT NULL,
+            request_timestamp TEXT NOT NULL,
+            response_timestamp TEXT,
+            duration_ms INTEGER,
+            request_size_bytes INTEGER NOT NULL,
+            response_size_bytes INTEGER,
+            response_status_code INTEGER,
+            upstream_url TEXT,
+            auth_type TEXT NOT NULL,
+            client_ip TEXT,
+            user_agent TEXT,
+            error_message TEXT
+        );
+        
         INSERT INTO routes (path, upstream, auth_type, auth_value, allowed_methods) 
         VALUES ('/warehouse', 'https://httpbin.org/post', 'api-key', 'Bearer warehouse_key','POST');
         INSERT INTO routes (path, upstream, auth_type, auth_value, allowed_methods) 
@@ -619,6 +865,96 @@ async fn main() {
                     "{:<15} | {:<25} | {:<10} | {:<15} | {:<20} | {:<20}",
                     path, upstream, auth_type, allowed_methods, oauth_client_id, oauth_scope
                 );
+            }
+        }
+        Commands::Metrics { limit, stats } => {
+            if stats {
+                // Show statistics summary
+                let stats_query = sqlx::query(
+                    "SELECT 
+                        COUNT(*) as total_requests,
+                        AVG(duration_ms) as avg_duration_ms,
+                        MIN(duration_ms) as min_duration_ms,
+                        MAX(duration_ms) as max_duration_ms,
+                        COUNT(CASE WHEN response_status_code >= 200 AND response_status_code < 300 THEN 1 END) as success_count,
+                        COUNT(CASE WHEN response_status_code >= 400 THEN 1 END) as error_count,
+                        SUM(request_size_bytes) as total_request_bytes,
+                        SUM(response_size_bytes) as total_response_bytes
+                    FROM request_metrics 
+                    WHERE response_timestamp IS NOT NULL"
+                )
+                .fetch_optional(&pool)
+                .await
+                .expect("Failed to fetch metrics statistics");
+
+                if let Some(row) = stats_query {
+                    println!("\n=== Request Metrics Summary ===");
+                    println!("Total Requests: {}", row.get::<i64, _>("total_requests"));
+                    println!("Success Rate: {:.1}%", 
+                        (row.get::<i64, _>("success_count") as f64 / row.get::<i64, _>("total_requests") as f64) * 100.0);
+                    println!("Average Duration: {:.2}ms", row.get::<Option<f64>, _>("avg_duration_ms").unwrap_or(0.0));
+                    println!("Min Duration: {}ms", row.get::<Option<i64>, _>("min_duration_ms").unwrap_or(0));
+                    println!("Max Duration: {}ms", row.get::<Option<i64>, _>("max_duration_ms").unwrap_or(0));
+                    println!("Total Request Bytes: {}", row.get::<Option<i64>, _>("total_request_bytes").unwrap_or(0));
+                    println!("Total Response Bytes: {}", row.get::<Option<i64>, _>("total_response_bytes").unwrap_or(0));
+                    println!("Error Count: {}", row.get::<i64, _>("error_count"));
+                } else {
+                    println!("No metrics data available");
+                }
+            }
+
+            // Show recent requests
+            let limit_value = limit.unwrap_or(10);
+            let rows = sqlx::query(
+                "SELECT id, path, method, request_timestamp, duration_ms, response_status_code, 
+                        request_size_bytes, response_size_bytes, upstream_url, auth_type, error_message
+                 FROM request_metrics 
+                 ORDER BY request_timestamp DESC 
+                 LIMIT ?"
+            )
+            .bind(limit_value)
+            .fetch_all(&pool)
+            .await
+            .expect("Failed to fetch recent metrics");
+
+            if !rows.is_empty() {
+                println!("\n=== Recent Requests (Last {}) ===", limit_value);
+                println!(
+                    "{:<8} | {:<15} | {:<6} | {:<20} | {:<8} | {:<6} | {:<10} | {:<12} | {:<10}",
+                    "ID", "Path", "Method", "Timestamp", "Duration", "Status", "Req Size", "Resp Size", "Auth Type"
+                );
+                println!("{:-<120}", "");
+
+                for row in rows {
+                    let id = row.get::<String, _>("id");
+                    let short_id = &id[..8]; // Show first 8 characters of UUID
+                    let path = row.get::<String, _>("path");
+                    let method = row.get::<String, _>("method");
+                    let timestamp = row.get::<String, _>("request_timestamp");
+                    let duration = row.get::<Option<i64>, _>("duration_ms")
+                        .map(|d| format!("{}ms", d))
+                        .unwrap_or_else(|| "N/A".to_string());
+                    let status = row.get::<Option<u16>, _>("response_status_code")
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| "N/A".to_string());
+                    let req_size = row.get::<i64, _>("request_size_bytes");
+                    let resp_size = row.get::<Option<i64>, _>("response_size_bytes")
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| "N/A".to_string());
+                    let auth_type = row.get::<String, _>("auth_type");
+
+                    println!(
+                        "{:<8} | {:<15} | {:<6} | {:<20} | {:<8} | {:<6} | {:<10} | {:<12} | {:<10}",
+                        short_id, path, method, &timestamp[..19], duration, status, req_size, resp_size, auth_type
+                    );
+
+                    // Show error message if present
+                    if let Some(error) = row.get::<Option<String>, _>("error_message") {
+                        println!("         Error: {}", error);
+                    }
+                }
+            } else {
+                println!("No metrics data available");
             }
         }
         Commands::Start => {

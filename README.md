@@ -4,7 +4,36 @@
 
 ---
 
-The Black Gate Project, or Black Gate for short, is an open source project API Gateway.
+The Black Gate Project, or Black Gate for short, is an opeTests:
+test POST request
+```bash
+curl -X POST http://localhost:3000/warehouse -d '{"payload": "test"}' -H "Content-Type: application/json"
+```
+test GET request
+```bash
+curl -X GET http://localhost:3000/warehouse-get
+```
+test OAuth request
+```bash
+curl -X GET http://localhost:3000/oauth-test
+```
+test OAuth request directly on the oauth test server
+```bash
+curl -X POST http://localhost:3001/oauth/token -d '{"grant_type": "client_credentials", "client_id": "test_client", "client_secret": "test_secret", "scope": "read:all"}' -H "Content-Type: application/json"
+```
+
+**Test metrics tracking:**
+After making several requests, view the metrics:
+```bash
+# View detailed statistics
+cargo run -- metrics --stats
+
+# View last 5 requests  
+cargo run -- metrics --limit 5
+
+# View both stats and recent requests
+cargo run -- metrics --stats --limit 10
+```API Gateway.
 
 The goal is simple: A rust server that handles common API tasks such as managing routes, upstreams, authentication, authorization, metrics, logging, and documentation.
 
@@ -59,8 +88,61 @@ $ curl -X POST http://localhost:3000/warehouse -d '{"payload": "test"}' -H "Cont
 
 Next Steps:
 - More Authentication schemes
-- Metrics, track the timing of each request and store it in a table for auditing.
+- ✅ **Metrics and Request Logging** - comprehensive request/response tracking with timing, status codes, and error logging
 - A web based user interface with HTMX for speed and simplicity.
+
+## Metrics and Monitoring
+
+Black Gate now includes comprehensive metrics tracking for all requests passing through the gateway:
+
+### Features
+- **Request/Response Logging**: Track all incoming requests with detailed information
+- **Timing Metrics**: Measure request duration from start to finish, including upstream response times
+- **Error Tracking**: Log authentication failures, routing errors, and upstream failures
+- **Authentication Metrics**: Track which authentication method was used for each request
+- **Data Size Tracking**: Monitor request and response payload sizes
+
+### Viewing Metrics
+
+**View recent requests:**
+```bash
+cargo run -- metrics --limit 10
+```
+
+**View statistics summary:**
+```bash
+cargo run -- metrics --stats
+```
+
+**View both stats and recent requests:**
+```bash
+cargo run -- metrics --stats --limit 5
+```
+
+### Metrics Data
+Each request tracks:
+- Unique request ID
+- Path and HTTP method  
+- Request/response timestamps
+- Total duration in milliseconds
+- Request and response sizes in bytes
+- HTTP status codes
+- Upstream URL
+- Authentication type used
+- Client IP and User-Agent (when available)
+- Error messages for failed requests
+
+### Log Levels
+Set logging level with the `RUST_LOG` environment variable:
+```bash
+# Show all info and above
+$env:RUST_LOG = "blackgate=info"
+cargo run -- start
+
+# Show debug information including OAuth token caching
+$env:RUST_LOG = "blackgate=debug"  
+cargo run -- start
+```
 
 Long Term Goals:
 - Black Gate will be self-hosted or hosted by "Black Gate" in the cloud for a subscription fee.

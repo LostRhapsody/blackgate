@@ -47,7 +47,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Add a new route
+    /// Add a new route to the API gateway
+    #[command(name = "add-route")]
     AddRoute {
         #[arg(long)]
         path: String,
@@ -69,21 +70,20 @@ enum Commands {
         #[arg(long)]
         oauth_scope: Option<String>,
     },
-    /// Remove a route
+    /// Remove a route from the API gateway
+    #[command(name = "remove-route")]
     RemoveRoute {
         #[arg(long)]
         path: String,
     },
-    /// List all routes
+    /// List all routes loaded into the API gateway
+    #[command(name = "list-routes")]
     ListRoutes,
     /// Start the API gateway server
+    #[command(name = "start")]
     Start,
-    /// Starts an OAuth test server for authentication testing
-    ///
-    /// This command launches a local server to simulate OAuth authentication flows for development and testing.
-    ///
-    /// # Arguments
-    /// * `--port <PORT>` - NOT IMPLEMENTED - Optional port number to run the server on. If not specified, a default port will be used.
+    /// Starts an OAuth test server for authentication testing and the Black Gate API Gateway server    
+    #[command(name = "start-oauth")]
     StartOAuthTestServer {
         #[arg(long)]
         port: Option<u16>,

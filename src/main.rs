@@ -60,29 +60,29 @@ impl RateLimiter {
     /// Returns true if allowed, false if rate limited
     fn is_allowed(&mut self, key: &str, requests_per_minute: u32, requests_per_hour: u32) -> bool {
         let now = Instant::now();
-        
+
         // Clean up old entries and get current requests for this key
         let requests = self.requests.entry(key.to_string()).or_insert_with(Vec::new);
-        
+
         // Remove requests older than 1 hour
         requests.retain(|&timestamp| now.duration_since(timestamp) < Duration::from_secs(3600));
-        
+
         // Check hourly limit
         if requests.len() >= requests_per_hour as usize {
             debug!("Rate limit exceeded for key: {} (hourly limit: {})", key, requests_per_hour);
             return false;
         }
-        
+
         // Check minute limit - count requests in the last minute
         let minute_requests = requests.iter()
             .filter(|&&timestamp| now.duration_since(timestamp) < Duration::from_secs(60))
             .count();
-            
+
         if minute_requests >= requests_per_minute as usize {
             debug!("Rate limit exceeded for key: {} (minute limit: {})", key, requests_per_minute);
             return false;
         }
-        
+
         // Add this request
         requests.push(now);
         true
@@ -158,7 +158,7 @@ enum Commands {
     /// Start the API gateway server
     #[command(name = "start")]
     Start,
-    /// Starts an OAuth test server for authentication testing and the Black Gate API Gateway server    
+    /// Starts an OAuth test server for authentication testing and the Black Gate API Gateway server
     #[command(name = "start-oauth")]
     StartOAuthTestServer {
         #[arg(long)]
@@ -253,7 +253,7 @@ struct OAuthTokenResponse {
 struct JwtClaims {
     sub: String,  // Subject (user identifier)
     exp: usize,   // Expiration time (as UTC timestamp)
-    iat: usize,   // Issued at (as UTC timestamp) 
+    iat: usize,   // Issued at (as UTC timestamp)
     iss: Option<String>,  // Issuer
     aud: Option<String>,  // Audience
     // Custom claims can be added here
@@ -478,7 +478,7 @@ async fn handle_request_core(
     // Initialize metrics
     let request_size = body.as_ref().map_or(0, |b| b.len() as i64);
     let mut metrics = RequestMetrics::new(path.clone(), method.to_string(), request_size);
-    
+
     info!(
         request_id = %metrics.id,
         method = %method,
@@ -510,10 +510,10 @@ async fn handle_request_core(
                         allowed_methods = %row.get::<String, _>("allowed_methods"),
                         "Method not allowed"
                     );
-                    
+
                     metrics.set_error("Method Not Allowed".to_string());
                     store_metrics(&state.db, &metrics).await;
-                    
+
                     return axum::response::Response::builder()
                         .status(405)
                         .body(axum::body::Body::from("Method Not Allowed"))
@@ -536,7 +536,7 @@ async fn handle_request_core(
                 store_metrics(&state.db, &metrics).await;
                 return response;
             }
-            
+
             // Extract route configuration from the database row
             let auth_type_str: String = row.get("auth_type");
             let route_config = RouteConfig {
@@ -561,7 +561,7 @@ async fn handle_request_core(
                 "Routing to upstream"
             );
 
-            // Create the request builder           
+            // Create the request builder
             let client = reqwest::Client::new();
             let builder = client.request(method, &route_config.upstream);
 
@@ -581,10 +581,10 @@ async fn handle_request_core(
                         path = %path,
                         "Authentication failed"
                     );
-                    
+
                     metrics.set_error("Authentication failed".to_string());
                     store_metrics(&state.db, &metrics).await;
-                    
+
                     return response;
                 }
             };
@@ -609,10 +609,10 @@ async fn handle_request_core(
                         error = %e,
                         "Upstream request failed"
                     );
-                    
+
                     metrics.set_error(format!("Upstream request failed: {}", e));
                     store_metrics(&state.db, &metrics).await;
-                    
+
                     return axum::response::Response::builder()
                         .status(502)
                         .body(axum::body::Body::from("Bad Gateway"))
@@ -622,7 +622,7 @@ async fn handle_request_core(
 
             let upstream_duration = upstream_start.elapsed();
             let response_status = response.status();
-            
+
             let response_body = match response.text().await {
                 Ok(body) => body,
                 Err(e) => {
@@ -631,10 +631,10 @@ async fn handle_request_core(
                         error = %e,
                         "Failed to read response body"
                     );
-                    
+
                     metrics.set_error(format!("Failed to read response body: {}", e));
                     store_metrics(&state.db, &metrics).await;
-                    
+
                     return axum::response::Response::builder()
                         .status(502)
                         .body(axum::body::Body::from("Bad Gateway"))
@@ -643,7 +643,7 @@ async fn handle_request_core(
             };
 
             let response_size = response_body.len() as i64;
-            
+
             // Complete metrics tracking
             metrics.complete_request(
                 response_size,
@@ -675,10 +675,10 @@ async fn handle_request_core(
                 path = %path,
                 "Route not found"
             );
-            
+
             metrics.set_error("Route not found".to_string());
             store_metrics(&state.db, &metrics).await;
-            
+
             axum::response::Response::builder()
                 .status(404)
                 .body(axum::body::Body::from("No route found"))
@@ -805,31 +805,31 @@ fn validate_jwt_token(
 
     // Create validation
     let mut validation = Validation::new(algorithm);
-    
+
     // Set issuer validation if provided
     if let Some(ref issuer) = jwt_config.issuer {
         validation.iss = Some(std::collections::HashSet::from([issuer.clone()]));
     }
-    
-    // Set audience validation if provided  
+
+    // Set audience validation if provided
     if let Some(ref audience) = jwt_config.audience {
         validation.aud = Some(std::collections::HashSet::from([audience.clone()]));
     }
 
     // Create decoding key
     let decoding_key = DecodingKey::from_secret(jwt_config.secret.as_ref());
-    
+
     // Decode and validate token
     let token_data = decode::<JwtClaims>(token, &decoding_key, &validation)?;
     let claims = token_data.claims;
-    
+
     // Validate required claims if specified
     for required_claim in &jwt_config.required_claims {
         if !claims.custom.contains_key(required_claim) {
             return Err(format!("Missing required claim: {}", required_claim).into());
         }
     }
-    
+
     debug!("JWT token validated successfully for subject: {}", claims.sub);
     Ok(claims)
 }
@@ -838,19 +838,19 @@ fn validate_jwt_token(
 fn create_jwt_config(route_config: &RouteConfig) -> Result<JwtConfig, String> {
     let secret = route_config.jwt_secret.as_ref()
         .ok_or("JWT secret is required")?;
-    
+
     let algorithm = match route_config.jwt_algorithm.as_deref().unwrap_or("HS256") {
         "HS256" => Algorithm::HS256,
-        "HS384" => Algorithm::HS384, 
+        "HS384" => Algorithm::HS384,
         "HS512" => Algorithm::HS512,
         alg => return Err(format!("Unsupported JWT algorithm: {}", alg)),
     };
-    
+
     let required_claims = route_config.jwt_required_claims
         .as_ref()
         .map(|claims| claims.split(',').map(|s| s.trim().to_string()).collect())
         .unwrap_or_default();
-    
+
     Ok(JwtConfig {
         secret: secret.clone(),
         algorithm,
@@ -946,7 +946,7 @@ async fn apply_authentication(
         }
         AuthType::Jwt => {
             debug!("Using JWT authentication for route {}", path);
-            
+
             // Create JWT configuration from route config
             let jwt_config = match create_jwt_config(route_config) {
                 Ok(config) => config,
@@ -958,7 +958,7 @@ async fn apply_authentication(
                         .unwrap());
                 }
             };
-            
+
             // TODO - update this to extact the JWT token from headers or query params
             if let Some(auth_value) = &route_config.auth_value {
                 // If auth_value contains a JWT token, validate it
@@ -967,7 +967,7 @@ async fn apply_authentication(
                 } else {
                     auth_value // Assume it's the raw JWT token
                 };
-                
+
                 match validate_jwt_token(token, &jwt_config) {
                     Ok(claims) => {
                         debug!("JWT token validated for route {} with subject: {}", path, claims.sub);
@@ -1013,13 +1013,13 @@ async fn check_rate_limit(
     // Use path as the rate limiting key
     // In production, you might want to use client IP or user ID instead
     let rate_limit_key = format!("path:{}", path);
-    
+
     // Check rate limits
     let rate_limit_exceeded = {
         let mut rate_limiter = rate_limiter.lock().unwrap();
         !rate_limiter.is_allowed(&rate_limit_key, rate_limit_per_minute as u32, rate_limit_per_hour as u32)
     };
-    
+
     if rate_limit_exceeded {
         warn!(
             request_id = %metrics.id,
@@ -1028,16 +1028,16 @@ async fn check_rate_limit(
             rate_limit_per_hour = rate_limit_per_hour,
             "Rate limit exceeded"
         );
-        
+
         metrics.set_error("Rate limit exceeded".to_string());
-        
+
         return Err(axum::response::Response::builder()
             .status(429)
             .header("Retry-After", "60") // Tell client to retry after 60 seconds
             .body(axum::body::Body::from("Too Many Requests"))
             .unwrap());
     }
-    
+
     debug!(
         request_id = %metrics.id,
         path = %path,
@@ -1045,7 +1045,7 @@ async fn check_rate_limit(
         rate_limit_per_hour = rate_limit_per_hour,
         "Rate limit check passed"
     );
-    
+
     Ok(())
 }
 
@@ -1071,7 +1071,7 @@ async fn main() {
         /*
         drop table if exists routes;
         drop table if exists request_metrics;
-        */ 
+        */
         "
         CREATE TABLE IF NOT EXISTS routes (
             path TEXT PRIMARY KEY,
@@ -1091,7 +1091,7 @@ async fn main() {
             rate_limit_per_minute INTEGER DEFAULT 60,
             rate_limit_per_hour INTEGER DEFAULT 1000
         );
-        
+
         CREATE TABLE IF NOT EXISTS request_metrics (
             id TEXT PRIMARY KEY,
             path TEXT NOT NULL,
@@ -1108,16 +1108,16 @@ async fn main() {
             user_agent TEXT,
             error_message TEXT
         );
-                
+
         ",
         /*
-        INSERT INTO routes (path, upstream, auth_type, auth_value, allowed_methods) 
+        INSERT INTO routes (path, upstream, auth_type, auth_value, allowed_methods)
         VALUES ('/post-test', 'https://httpbin.org/post', 'api-key', 'Bearer warehouse_key','POST');
-        INSERT INTO routes (path, upstream, auth_type, auth_value, allowed_methods) 
+        INSERT INTO routes (path, upstream, auth_type, auth_value, allowed_methods)
         VALUES ('/get-test', 'https://httpbin.org/post', 'api-key', 'Bearer warehouse_key','GET');
-        INSERT INTO routes (path, upstream, auth_type, auth_value, allowed_methods) 
+        INSERT INTO routes (path, upstream, auth_type, auth_value, allowed_methods)
         VALUES ('/no-method-test', 'https://httpbin.org/post', 'api-key', 'Bearer warehouse_key','');
-        INSERT INTO routes (path, upstream, auth_type, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope) 
+        INSERT INTO routes (path, upstream, auth_type, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope)
         VALUES ('/oauth-test', 'https://httpbin.org/anything', 'oauth2', 'GET', 'http://localhost:3001/oauth/token', 'test_client', 'test_secret', 'read:all');
         */
     )
@@ -1152,10 +1152,10 @@ async fn main() {
                 Some(auth_str) => AuthType::from_str(auth_str),
                 None => AuthType::None,
             };
-            
+
             sqlx::query(
-                "INSERT OR REPLACE INTO routes 
-                (path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, rate_limit_per_minute, rate_limit_per_hour) 
+                "INSERT OR REPLACE INTO routes
+                (path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, rate_limit_per_minute, rate_limit_per_hour)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
                 .bind(path.clone())
@@ -1181,7 +1181,7 @@ async fn main() {
             // Print OAuth details if this is OAuth authentication
             println!("Added route: {} -> {} with {} authentication",
                 path, upstream, auth_type_enum.to_display_string()
-            );            
+            );
         }
         Commands::RemoveRoute { path } => {
             let path_copy = path.clone();
@@ -1227,7 +1227,7 @@ async fn main() {
             if stats {
                 // Show statistics summary
                 let stats_query = sqlx::query(
-                    "SELECT 
+                    "SELECT
                         COUNT(*) as total_requests,
                         AVG(duration_ms) as avg_duration_ms,
                         MIN(duration_ms) as min_duration_ms,
@@ -1236,7 +1236,7 @@ async fn main() {
                         COUNT(CASE WHEN response_status_code >= 400 THEN 1 END) as error_count,
                         SUM(request_size_bytes) as total_request_bytes,
                         SUM(response_size_bytes) as total_response_bytes
-                    FROM request_metrics 
+                    FROM request_metrics
                     WHERE response_timestamp IS NOT NULL"
                 )
                 .fetch_optional(&pool)
@@ -1246,7 +1246,7 @@ async fn main() {
                 if let Some(row) = stats_query {
                     println!("\n=== Request Metrics Summary ===");
                     println!("Total Requests: {}", row.get::<i64, _>("total_requests"));
-                    println!("Success Rate: {:.1}%", 
+                    println!("Success Rate: {:.1}%",
                         (row.get::<i64, _>("success_count") as f64 / row.get::<i64, _>("total_requests") as f64) * 100.0);
                     println!("Average Duration: {:.2}ms", row.get::<Option<f64>, _>("avg_duration_ms").unwrap_or(0.0));
                     println!("Min Duration: {}ms", row.get::<Option<i64>, _>("min_duration_ms").unwrap_or(0));
@@ -1262,10 +1262,10 @@ async fn main() {
             // Show recent requests
             let limit_value = limit.unwrap_or(10);
             let rows = sqlx::query(
-                "SELECT id, path, method, request_timestamp, duration_ms, response_status_code, 
+                "SELECT id, path, method, request_timestamp, duration_ms, response_status_code,
                         request_size_bytes, response_size_bytes, upstream_url, auth_type, error_message
-                 FROM request_metrics 
-                 ORDER BY request_timestamp DESC 
+                 FROM request_metrics
+                 ORDER BY request_timestamp DESC
                  LIMIT ?"
             )
             .bind(limit_value)

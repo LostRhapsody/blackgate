@@ -24,7 +24,7 @@ mod jwt_tests {
 
         let header = Header::new(algorithm);
         let encoding_key = EncodingKey::from_secret(secret.as_ref());
-        
+
         encode(&header, &claims, &encoding_key).unwrap()
     }
 
@@ -51,7 +51,9 @@ mod jwt_tests {
         assert!(serialized.contains("user123"));
         assert!(serialized.contains("blackgate"));
         assert!(serialized.contains("admin"));
-    }    #[test]
+    }
+
+    #[test]
     fn test_jwt_config_creation() {
         // Create a test RouteConfig with JWT settings
         let route_config = crate::RouteConfig {
@@ -125,7 +127,7 @@ mod jwt_tests {
     fn test_validate_jwt_token_success() {
         let secret = "test_secret_key";
         let token = create_test_jwt(secret, Algorithm::HS256, Some("blackgate"), Some("api"), None);
-        
+
         let config = JwtConfig {
             secret: secret.to_string(),
             algorithm: Algorithm::HS256,
@@ -141,7 +143,7 @@ mod jwt_tests {
     #[test]
     fn test_validate_jwt_token_invalid_secret() {
         let token = create_test_jwt("correct_secret", Algorithm::HS256, None, None, None);
-        
+
         let config = JwtConfig {
             secret: "wrong_secret".to_string(),
             algorithm: Algorithm::HS256,
@@ -158,7 +160,7 @@ mod jwt_tests {
     fn test_validate_jwt_token_issuer_mismatch() {
         let secret = "test_secret";
         let token = create_test_jwt(secret, Algorithm::HS256, Some("wrong_issuer"), None, None);
-        
+
         let config = JwtConfig {
             secret: secret.to_string(),
             algorithm: Algorithm::HS256,
@@ -175,7 +177,7 @@ mod jwt_tests {
     fn test_validate_jwt_token_audience_mismatch() {
         let secret = "test_secret";
         let token = create_test_jwt(secret, Algorithm::HS256, None, Some("wrong_audience"), None);
-        
+
         let config = JwtConfig {
             secret: secret.to_string(),
             algorithm: Algorithm::HS256,
@@ -193,9 +195,9 @@ mod jwt_tests {
         let secret = "test_secret";
         let mut custom_claims = HashMap::new();
         custom_claims.insert("role".to_string(), serde_json::Value::String("user".to_string()));
-        
+
         let token = create_test_jwt(secret, Algorithm::HS256, None, None, Some(custom_claims));
-        
+
         let config = JwtConfig {
             secret: secret.to_string(),
             algorithm: Algorithm::HS256,
@@ -217,9 +219,9 @@ mod jwt_tests {
             serde_json::Value::String("read".to_string()),
             serde_json::Value::String("write".to_string()),
         ]));
-        
+
         let token = create_test_jwt(secret, Algorithm::HS256, None, None, Some(custom_claims));
-        
+
         let config = JwtConfig {
             secret: secret.to_string(),
             algorithm: Algorithm::HS256,
@@ -235,7 +237,7 @@ mod jwt_tests {
     #[test]
     fn test_different_algorithms() {
         let secret = "test_secret_key_with_sufficient_length_for_hs512";
-        
+
         // Test HS256
         let token_hs256 = create_test_jwt(secret, Algorithm::HS256, None, None, None);
         let config_hs256 = JwtConfig {
@@ -274,7 +276,7 @@ mod jwt_tests {
     fn test_algorithm_mismatch() {
         let secret = "test_secret_key";
         let token = create_test_jwt(secret, Algorithm::HS256, None, None, None);
-        
+
         let config = JwtConfig {
             secret: secret.to_string(),
             algorithm: Algorithm::HS384, // Different algorithm
@@ -302,7 +304,7 @@ mod jwt_tests {
         let header = Header::new(Algorithm::HS256);
         let encoding_key = EncodingKey::from_secret(secret.as_ref());
         let token = encode(&header, &claims, &encoding_key).unwrap();
-        
+
         let config = JwtConfig {
             secret: secret.to_string(),
             algorithm: Algorithm::HS256,

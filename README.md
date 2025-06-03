@@ -44,19 +44,19 @@ $ cargo run -- start
 $ curl -X POST http://localhost:3000/warehouse -d '{"payload": "test"}' -H "Content-Type: application/json"
 # Response
 {
-  "args": {}, 
-  "data": "test", 
-  "files": {}, 
-  "form": {}, 
+  "args": {},
+  "data": "test",
+  "files": {},
+  "form": {},
   "headers": {
-    "Accept": "*/*", 
-    "Authorization": "Bearer warehouse_key", 
-    "Content-Length": "4", 
-    "Host": "httpbin.org", 
+    "Accept": "*/*",
+    "Authorization": "Bearer warehouse_key",
+    "Content-Length": "4",
+    "Host": "httpbin.org",
     "X-Amzn-Trace-Id": "Root=1-683e373d-2b4ce83e644124823b5e60a7"
-  }, 
-  "json": null, 
-  "origin": "142.113.116.210", 
+  },
+  "json": null,
+  "origin": "142.113.116.210",
   "url": "https://httpbin.org/post"
 }
 ```
@@ -98,7 +98,7 @@ cargo run -- metrics --stats --limit 5
 ### Metrics Data
 Each request tracks:
 - Unique request ID
-- Path and HTTP method  
+- Path and HTTP method
 - Request/response timestamps
 - Total duration in milliseconds
 - Request and response sizes in bytes
@@ -116,7 +116,7 @@ $env:RUST_LOG = "blackgate=info"
 cargo run -- start
 
 # Show debug information including OAuth token caching
-$env:RUST_LOG = "blackgate=debug"  
+$env:RUST_LOG = "blackgate=debug"
 cargo run -- start
 ```
 
@@ -206,7 +206,7 @@ cargo run -- start
 
 # Test rapid requests (will hit rate limit after 2 requests)
 curl http://localhost:3000/test  # Success
-curl http://localhost:3000/test  # Success  
+curl http://localhost:3000/test  # Success
 curl http://localhost:3000/test  # 429 Too Many Requests
 ```
 
@@ -224,11 +224,11 @@ Long Term Goals:
 Tests:
 test POST request
 ```bash
-curl -X POST http://localhost:3000/warehouse -d '{"payload": "test"}' -H "Content-Type: application/json"
+curl -X POST http://localhost:3000/post-test -d '{"payload": "test"}' -H "Content-Type: application/json"
 ```
 test GET request
 ```bash
-curl -X GET http://localhost:3000/warehouse-get
+curl -X GET http://localhost:3000/get-test
 ```
 test OAuth request
 ```bash

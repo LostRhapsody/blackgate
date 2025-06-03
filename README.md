@@ -4,36 +4,7 @@
 
 ---
 
-The Black Gate Project, or Black Gate for short, is an opeTests:
-test POST request
-```bash
-curl -X POST http://localhost:3000/warehouse -d '{"payload": "test"}' -H "Content-Type: application/json"
-```
-test GET request
-```bash
-curl -X GET http://localhost:3000/warehouse-get
-```
-test OAuth request
-```bash
-curl -X GET http://localhost:3000/oauth-test
-```
-test OAuth request directly on the oauth test server
-```bash
-curl -X POST http://localhost:3001/oauth/token -d '{"grant_type": "client_credentials", "client_id": "test_client", "client_secret": "test_secret", "scope": "read:all"}' -H "Content-Type: application/json"
-```
-
-**Test metrics tracking:**
-After making several requests, view the metrics:
-```bash
-# View detailed statistics
-cargo run -- metrics --stats
-
-# View last 5 requests  
-cargo run -- metrics --limit 5
-
-# View both stats and recent requests
-cargo run -- metrics --stats --limit 10
-```API Gateway.
+The Black Gate Project, or Black Gate for short, is an open source project API Gateway.
 
 The goal is simple: A rust server that handles common API tasks such as managing routes, upstreams, authentication, authorization, metrics, logging, and documentation.
 

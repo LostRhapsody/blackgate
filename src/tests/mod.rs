@@ -8,6 +8,9 @@ use reqwest::Client;
 use tokio::runtime::Runtime;
 use sqlx::SqlitePool;
 
+// Include OAuth tests
+mod oauth_tests;
+
 // Helper to reset DB before each test
 fn reset_db() {
     // Initialize SQLite database

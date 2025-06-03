@@ -476,35 +476,18 @@ async fn handle_request_core(
             let rate_limit_per_minute: i64 = row.get("rate_limit_per_minute");
             let rate_limit_per_hour: i64 = row.get("rate_limit_per_hour");
 
-            // Check rate limits - use path as the rate limiting key
-            // In production, you might want to use client IP or user ID instead
-            let rate_limit_key = format!("path:{}", path);
-            
             // Check rate limits
-            let rate_limit_exceeded = {
-                let mut rate_limiter = state.rate_limiter.lock().unwrap();
-                !rate_limiter.is_allowed(&rate_limit_key, rate_limit_per_minute as u32, rate_limit_per_hour as u32)
-            };
-            
-            if rate_limit_exceeded {
-                warn!(
-                    request_id = %metrics.id,
-                    path = %path,
-                    rate_limit_per_minute = rate_limit_per_minute,
-                    rate_limit_per_hour = rate_limit_per_hour,
-                    "Rate limit exceeded"
-                );
-                
-                metrics.set_error("Rate limit exceeded".to_string());
+            if let Err(response) = check_rate_limit(
+                &path,
+                rate_limit_per_minute,
+                rate_limit_per_hour,
+                state.rate_limiter.clone(),
+                &mut metrics,
+            ).await {
                 store_metrics(&state.db, &metrics).await;
-                
-                return axum::response::Response::builder()
-                    .status(429)
-                    .header("Retry-After", "60") // Tell client to retry after 60 seconds
-                    .body(axum::body::Body::from("Too Many Requests"))
-                    .unwrap();
+                return response;
             }
-
+            
             // Extract route configuration from the database row
             let auth_type_str: String = row.get("auth_type");
             let route_config = RouteConfig {
@@ -842,6 +825,54 @@ async fn apply_authentication(
             Ok(builder)
         }
     }
+}
+
+/// Check rate limits for a request
+/// Returns Ok(()) if allowed, Err(response) if rate limited
+async fn check_rate_limit(
+    path: &str,
+    rate_limit_per_minute: i64,
+    rate_limit_per_hour: i64,
+    rate_limiter: Arc<Mutex<RateLimiter>>,
+    metrics: &mut RequestMetrics,
+) -> Result<(), axum::response::Response> {
+    // Use path as the rate limiting key
+    // In production, you might want to use client IP or user ID instead
+    let rate_limit_key = format!("path:{}", path);
+    
+    // Check rate limits
+    let rate_limit_exceeded = {
+        let mut rate_limiter = rate_limiter.lock().unwrap();
+        !rate_limiter.is_allowed(&rate_limit_key, rate_limit_per_minute as u32, rate_limit_per_hour as u32)
+    };
+    
+    if rate_limit_exceeded {
+        warn!(
+            request_id = %metrics.id,
+            path = %path,
+            rate_limit_per_minute = rate_limit_per_minute,
+            rate_limit_per_hour = rate_limit_per_hour,
+            "Rate limit exceeded"
+        );
+        
+        metrics.set_error("Rate limit exceeded".to_string());
+        
+        return Err(axum::response::Response::builder()
+            .status(429)
+            .header("Retry-After", "60") // Tell client to retry after 60 seconds
+            .body(axum::body::Body::from("Too Many Requests"))
+            .unwrap());
+    }
+    
+    debug!(
+        request_id = %metrics.id,
+        path = %path,
+        rate_limit_per_minute = rate_limit_per_minute,
+        rate_limit_per_hour = rate_limit_per_hour,
+        "Rate limit check passed"
+    );
+    
+    Ok(())
 }
 
 #[tokio::main]

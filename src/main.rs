@@ -26,6 +26,10 @@ enum Commands {
         #[arg(long)] auth_value: Option<String>,
         #[arg(long)] allowed_methods: Option<String>,
     },
+    /// Remove a route
+    RemoveRoute {
+        #[arg(long)] path: String,
+    },
     /// List all routes
     ListRoutes,
     /// Start the API gateway server
@@ -204,6 +208,14 @@ async fn main() {
                 .await
                 .expect("Failed to add route");
             println!("Added route: {} -> {}", path, upstream);
+        }
+        Commands::RemoveRoute { path } => {
+            sqlx::query("DELETE FROM routes WHERE path = ?")
+                .bind(path)
+                .execute(&pool)
+                .await
+                .expect("Failed to remove route");
+            println!("Removed route: {}", path);
         }
         Commands::ListRoutes => {
             let rows = sqlx::query("SELECT path, upstream, auth_type, auth_value, allowed_methods FROM routes")

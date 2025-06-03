@@ -65,7 +65,7 @@ Next Steps:
 
 ## Metrics and Monitoring
 
-Black Gate now includes comprehensive metrics tracking for all requests passing through the gateway:
+Black Gate includes comprehensive metrics tracking for all requests passing through the gateway:
 
 ### Features
 - **Request/Response Logging**: Track all incoming requests with detailed information

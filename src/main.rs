@@ -16,14 +16,11 @@ struct Cli {
 enum Commands {
     /// Add a new route
     AddRoute {
-        #[arg(long)]
-        path: String,
-        #[arg(long)]
-        upstream: String,
-        #[arg(long)]
-        auth_type: Option<String>,
-        #[arg(long)]
-        auth_value: Option<String>,
+        #[arg(long)] path: String,
+        #[arg(long)] upstream: String,
+        #[arg(long)] auth_type: Option<String>,
+        #[arg(long)] auth_value: Option<String>,
+        #[arg(long)] allowed_methods: Option<String>,
     },
     /// List all routes
     ListRoutes,
@@ -45,10 +42,6 @@ async fn root() -> &'static str {
     "Welcome to Black Gate"
 }
 
-async fn post_request() -> &'static str {
- ""
-}
-
 /// Handles incoming HTTP requests by forwarding them to configured upstream services.
 /// Performs route lookup in the database and applies any configured authentication.
 async fn handle_request(
@@ -67,7 +60,7 @@ async fn handle_request(
     // let start = std::time::Instant::now();
 
     // Query the database for the route
-    let row = sqlx::query("SELECT upstream, auth_type, auth_value FROM routes WHERE path = ?")
+    let row = sqlx::query("SELECT upstream, auth_type, auth_value, allowed_methods FROM routes WHERE path = ?")
         .bind(path)
         .fetch_optional(&state.db)
         .await
@@ -75,6 +68,19 @@ async fn handle_request(
 
     match row {
         Some(row) => {
+
+            // confirm the method is allowed
+            let allowed_methods: String = row.get("allowed_methods");
+            // If allowed_methods is empty, all methods are allowed
+            if !allowed_methods.is_empty() {            
+                let allowed_methods: Vec<&str> = allowed_methods.split(',').collect();
+                if !allowed_methods.contains(&method.as_str()) {
+                    return axum::response::Response::builder()
+                        .status(405)
+                        .body(axum::body::Body::from("Method Not Allowed"))
+                        .unwrap();
+                }
+            }
 
             // Set the upstream and auth from the record
             let upstream: String = row.get("upstream");
@@ -145,12 +151,18 @@ async fn main() {
 
     // Create routes table if it doesn't exist
     sqlx::query(
-        "CREATE TABLE IF NOT EXISTS routes (
+        "drop table if exists routes;
+        CREATE TABLE IF NOT EXISTS routes (
             path TEXT PRIMARY KEY,
-            auth_type TEXT DEFAULT 'none',
-            auth_value TEXT DEFAULT '',
+            auth_type TEXT,
+            auth_value TEXT,
+            allowed_methods TEXT,
             upstream TEXT NOT NULL
-        )",
+        )
+        ;
+        INSERT INTO routes (path, upstream, auth_type, auth_value, allowed_methods) 
+        VALUES ('/warehouse', 'https://httpbin.org/post', 'api-key', 'Bearer warehouse_key','GET')
+        ",
     )
     .execute(&pool)
     .await
@@ -160,24 +172,25 @@ async fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::AddRoute { path, upstream, auth_type, auth_value } => {
-            sqlx::query("INSERT OR REPLACE INTO routes (path, upstream, auth_type, auth_value) VALUES (?, ?, ?, ?)")
+        Commands::AddRoute { path, upstream, auth_type, auth_value, allowed_methods } => {
+            sqlx::query("INSERT OR REPLACE INTO routes (path, upstream, auth_type, auth_value, allowed_methods) VALUES (?, ?, ?, ?, ?)")
                 .bind(path.clone())
                 .bind(upstream.clone())
                 .bind(auth_type.unwrap_or_else(|| "none".into()))
                 .bind(auth_value.unwrap_or_else(|| "".into()))
+                .bind(allowed_methods.unwrap_or_else(|| "".into()))
                 .execute(&pool)
                 .await
                 .expect("Failed to add route");
             println!("Added route: {} -> {}", path, upstream);
         }
         Commands::ListRoutes => {
-            let rows = sqlx::query("SELECT path, upstream, auth_type, auth_value FROM routes")
+            let rows = sqlx::query("SELECT path, upstream, auth_type, auth_value, allowed_methods FROM routes")
                 .fetch_all(&pool)
                 .await
                 .expect("Failed to list routes");
             for row in rows {
-                println!("{} -> {} | {} | {}", row.get::<String, _>("path"), row.get::<String, _>("upstream"), row.get::<String, _>("auth_type"), row.get::<String, _>("auth_value"));
+                println!("{} -> {} | {} | {} | {}", row.get::<String, _>("path"), row.get::<String, _>("upstream"), row.get::<String, _>("auth_type"), row.get::<String, _>("auth_value"), row.get::<String, _>("allowed_methods"));
             }
         }
         Commands::Start => {

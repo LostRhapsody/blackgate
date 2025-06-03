@@ -16,6 +16,8 @@ uuid = { version = "1.8", features = ["v4", "fast-rng"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = { version = "0.4", features = ["serde"] }
+jsonwebtoken = "9.3"
+base64 = "0.22"
 
 [dev-dependencies]
 assert_cmd = "2.0.14"

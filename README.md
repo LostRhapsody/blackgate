@@ -24,6 +24,7 @@ Status:
 Authentication Schemes Supported:
 - oAuth2.0 Client Credentials
 - API Keys
+- JWT
 
 Features:
 - Authentication

@@ -12,6 +12,7 @@ use tokio::time::{Duration, Instant};
 use tracing::{info, warn, error, debug};
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
+use jsonwebtoken::{decode, Algorithm, Validation, DecodingKey};
 
 /// Structure to store OAuth tokens with expiration
 struct OAuthTokenCache {
@@ -120,6 +121,17 @@ enum Commands {
         oauth_client_secret: Option<String>,
         #[arg(long)]
         oauth_scope: Option<String>,
+        // JWT specific fields
+        #[arg(long)]
+        jwt_secret: Option<String>,
+        #[arg(long)]
+        jwt_algorithm: Option<String>,
+        #[arg(long)]
+        jwt_issuer: Option<String>,
+        #[arg(long)]
+        jwt_audience: Option<String>,
+        #[arg(long)]
+        jwt_required_claims: Option<String>,
         // Rate limiting fields
         #[arg(long, help = "Maximum requests per minute (default: 60)")]
         rate_limit_per_minute: Option<u32>,
@@ -236,6 +248,29 @@ struct OAuthTokenResponse {
     // Other fields may be present but we don't need them for now
 }
 
+/// JWT Claims structure for token validation
+#[derive(Debug, Serialize, Deserialize)]
+struct JwtClaims {
+    sub: String,  // Subject (user identifier)
+    exp: usize,   // Expiration time (as UTC timestamp)
+    iat: usize,   // Issued at (as UTC timestamp) 
+    iss: Option<String>,  // Issuer
+    aud: Option<String>,  // Audience
+    // Custom claims can be added here
+    #[serde(flatten)]
+    custom: HashMap<String, serde_json::Value>,
+}
+
+/// JWT Configuration structure
+#[derive(Debug, Clone)]
+struct JwtConfig {
+    secret: String,
+    algorithm: Algorithm,
+    issuer: Option<String>,
+    audience: Option<String>,
+    required_claims: Vec<String>,
+}
+
 /// Route configuration structure to hold authentication details
 #[derive(Debug)]
 struct RouteConfig {
@@ -246,6 +281,12 @@ struct RouteConfig {
     oauth_client_id: Option<String>,
     oauth_client_secret: Option<String>,
     oauth_scope: Option<String>,
+    // JWT specific fields
+    jwt_secret: Option<String>,
+    jwt_algorithm: Option<String>,
+    jwt_issuer: Option<String>,
+    jwt_audience: Option<String>,
+    jwt_required_claims: Option<String>,
 }
 
 /// Authentication types supported by the gateway
@@ -447,7 +488,7 @@ async fn handle_request_core(
     );
 
     // Query the database for the route
-    let row = sqlx::query("SELECT upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, rate_limit_per_minute, rate_limit_per_hour FROM routes WHERE path = ?")
+    let row = sqlx::query("SELECT upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, rate_limit_per_minute, rate_limit_per_hour FROM routes WHERE path = ?")
         .bind(&path)
         .fetch_optional(&state.db)
         .await
@@ -506,6 +547,11 @@ async fn handle_request_core(
                 oauth_client_id: row.get("oauth_client_id"),
                 oauth_client_secret: row.get("oauth_client_secret"),
                 oauth_scope: row.get("oauth_scope"),
+                jwt_secret: row.get("jwt_secret"),
+                jwt_algorithm: row.get("jwt_algorithm"),
+                jwt_issuer: row.get("jwt_issuer"),
+                jwt_audience: row.get("jwt_audience"),
+                jwt_required_claims: row.get("jwt_required_claims"),
             };
 
             info!(
@@ -744,6 +790,76 @@ async fn start_oauth_test_server(
     }
 }
 
+/// Validate JWT token and extract claims
+fn validate_jwt_token(
+    token: &str,
+    jwt_config: &JwtConfig,
+) -> Result<JwtClaims, Box<dyn std::error::Error + Send + Sync>> {
+    // Parse algorithm
+    let algorithm = match jwt_config.algorithm {
+        Algorithm::HS256 | Algorithm::HS384 | Algorithm::HS512 => jwt_config.algorithm,
+        _ => {
+            return Err("Unsupported JWT algorithm. Only HMAC algorithms (HS256, HS384, HS512) are currently supported.".into());
+        }
+    };
+
+    // Create validation
+    let mut validation = Validation::new(algorithm);
+    
+    // Set issuer validation if provided
+    if let Some(ref issuer) = jwt_config.issuer {
+        validation.iss = Some(std::collections::HashSet::from([issuer.clone()]));
+    }
+    
+    // Set audience validation if provided  
+    if let Some(ref audience) = jwt_config.audience {
+        validation.aud = Some(std::collections::HashSet::from([audience.clone()]));
+    }
+
+    // Create decoding key
+    let decoding_key = DecodingKey::from_secret(jwt_config.secret.as_ref());
+    
+    // Decode and validate token
+    let token_data = decode::<JwtClaims>(token, &decoding_key, &validation)?;
+    let claims = token_data.claims;
+    
+    // Validate required claims if specified
+    for required_claim in &jwt_config.required_claims {
+        if !claims.custom.contains_key(required_claim) {
+            return Err(format!("Missing required claim: {}", required_claim).into());
+        }
+    }
+    
+    debug!("JWT token validated successfully for subject: {}", claims.sub);
+    Ok(claims)
+}
+
+/// Create JWT configuration from route config
+fn create_jwt_config(route_config: &RouteConfig) -> Result<JwtConfig, String> {
+    let secret = route_config.jwt_secret.as_ref()
+        .ok_or("JWT secret is required")?;
+    
+    let algorithm = match route_config.jwt_algorithm.as_deref().unwrap_or("HS256") {
+        "HS256" => Algorithm::HS256,
+        "HS384" => Algorithm::HS384, 
+        "HS512" => Algorithm::HS512,
+        alg => return Err(format!("Unsupported JWT algorithm: {}", alg)),
+    };
+    
+    let required_claims = route_config.jwt_required_claims
+        .as_ref()
+        .map(|claims| claims.split(',').map(|s| s.trim().to_string()).collect())
+        .unwrap_or_default();
+    
+    Ok(JwtConfig {
+        secret: secret.clone(),
+        algorithm,
+        issuer: route_config.jwt_issuer.clone(),
+        audience: route_config.jwt_audience.clone(),
+        required_claims,
+    })
+}
+
 /// Apply authentication to a request builder based on the route configuration
 async fn apply_authentication(
     builder: reqwest::RequestBuilder,
@@ -829,10 +945,48 @@ async fn apply_authentication(
             }
         }
         AuthType::Jwt => {
-            // JWT authentication logic would go here
             debug!("Using JWT authentication for route {}", path);
-            // For now, just return the builder without modification
-            Ok(builder)
+            
+            // Create JWT configuration from route config
+            let jwt_config = match create_jwt_config(route_config) {
+                Ok(config) => config,
+                Err(e) => {
+                    error!("Invalid JWT configuration for route {}: {}", path, e);
+                    return Err(axum::response::Response::builder()
+                        .status(500)
+                        .body(axum::body::Body::from(format!("JWT configuration error: {}", e)))
+                        .unwrap());
+                }
+            };
+            
+            // TODO - update this to extact the JWT token from headers or query params
+            if let Some(auth_value) = &route_config.auth_value {
+                // If auth_value contains a JWT token, validate it
+                let token = if auth_value.starts_with("Bearer ") {
+                    &auth_value[7..] // Remove "Bearer " prefix
+                } else {
+                    auth_value // Assume it's the raw JWT token
+                };
+                
+                match validate_jwt_token(token, &jwt_config) {
+                    Ok(claims) => {
+                        debug!("JWT token validated for route {} with subject: {}", path, claims.sub);
+                        // Forward the original token
+                        Ok(builder.header("Authorization", auth_value))
+                    }
+                    Err(e) => {
+                        warn!("JWT token validation failed for route {}: {}", path, e);
+                        Err(axum::response::Response::builder()
+                            .status(401)
+                            .body(axum::body::Body::from("Invalid JWT token"))
+                            .unwrap())
+                    }
+                }
+            } else {
+                // No token provided - this might be acceptable if JWT validation happens upstream
+                debug!("No JWT token provided for route {}, forwarding request without token", path);
+                Ok(builder)
+            }
         }
         AuthType::Oidc => {
             // OIDC authentication logic would go here
@@ -929,6 +1083,11 @@ async fn main() {
             oauth_client_id TEXT,
             oauth_client_secret TEXT,
             oauth_scope TEXT,
+            jwt_secret TEXT,
+            jwt_algorithm TEXT,
+            jwt_issuer TEXT,
+            jwt_audience TEXT,
+            jwt_required_claims TEXT,
             rate_limit_per_minute INTEGER DEFAULT 60,
             rate_limit_per_hour INTEGER DEFAULT 1000
         );
@@ -970,19 +1129,24 @@ async fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::AddRoute {
-            path,
-            upstream,
-            auth_type,
-            auth_value,
-            allowed_methods,
-            oauth_token_url,
-            oauth_client_id,
-            oauth_client_secret,
-            oauth_scope,
-            rate_limit_per_minute,
-            rate_limit_per_hour,
-        } => {
+    Commands::AddRoute {
+        path,
+        upstream,
+        auth_type,
+        auth_value,
+        allowed_methods,
+        oauth_token_url,
+        oauth_client_id,
+        oauth_client_secret,
+        oauth_scope,
+        jwt_secret,
+        jwt_algorithm,
+        jwt_issuer,
+        jwt_audience,
+        jwt_required_claims,
+        rate_limit_per_minute,
+        rate_limit_per_hour,
+    } => {
             // Parse the auth type and convert to enum
             let auth_type_enum = match auth_type.as_ref() {
                 Some(auth_str) => AuthType::from_str(auth_str),
@@ -991,8 +1155,8 @@ async fn main() {
             
             sqlx::query(
                 "INSERT OR REPLACE INTO routes 
-                (path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, rate_limit_per_minute, rate_limit_per_hour) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                (path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, rate_limit_per_minute, rate_limit_per_hour) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
                 .bind(path.clone())
                 .bind(upstream.clone())
@@ -1003,6 +1167,11 @@ async fn main() {
                 .bind(oauth_client_id.unwrap_or_else(|| "".into()))
                 .bind(oauth_client_secret.unwrap_or_else(|| "".into()))
                 .bind(oauth_scope.unwrap_or_else(|| "".into()))
+                .bind(jwt_secret.unwrap_or_else(|| "".into()))
+                .bind(jwt_algorithm.unwrap_or_else(|| "HS256".into()))
+                .bind(jwt_issuer.unwrap_or_else(|| "".into()))
+                .bind(jwt_audience.unwrap_or_else(|| "".into()))
+                .bind(jwt_required_claims.unwrap_or_else(|| "".into()))
                 .bind(rate_limit_per_minute.unwrap_or(60))
                 .bind(rate_limit_per_hour.unwrap_or(1000))
                 .execute(&pool)
@@ -1024,15 +1193,15 @@ async fn main() {
             println!("Removed route: {}", path_copy);
         }
         Commands::ListRoutes => {
-            let rows = sqlx::query("SELECT path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, rate_limit_per_minute, rate_limit_per_hour FROM routes")
+            let rows = sqlx::query("SELECT path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, rate_limit_per_minute, rate_limit_per_hour FROM routes")
                 .fetch_all(&pool)
                 .await
                 .expect("Failed to list routes");
 
             // Header
             println!(
-                "\n{:<15} | {:<25} | {:<10} | {:<15} | {:<20} | {:<15} | {:<15}",
-                "Path", "Upstream", "Auth Type", "Methods", "OAuth Client ID", "Rate/Min", "Rate/Hour"
+                "\n{:<15} | {:<25} | {:<10} | {:<15} | {:<20} | {:<15} | {:<15} | {:<15} | {:<15} | {:<15}",
+                "Path", "Upstream", "Auth Type", "Methods", "OAuth Client ID", "Rate/Min", "Rate/Hour", "Algorithm", "Issuer", "Required Claims"
             );
             println!("{:-<120}", "");
 
@@ -1044,10 +1213,13 @@ async fn main() {
                 let oauth_client_id = row.get::<String, _>("oauth_client_id");
                 let rate_limit_per_minute: i64 = row.get("rate_limit_per_minute");
                 let rate_limit_per_hour: i64 = row.get("rate_limit_per_hour");
+                let algorithm = row.get::<String, _>("jwt_algorithm");
+                let issuer = row.get::<String, _>("jwt_issuer");
+                let required_claims = row.get::<String, _>("jwt_required_claims");
 
                 println!(
-                    "{:<15} | {:<25} | {:<10} | {:<15} | {:<20} | {:<15} | {:<15}",
-                    path, upstream, auth_type, allowed_methods, oauth_client_id, rate_limit_per_minute, rate_limit_per_hour
+                    "{:<15} | {:<25} | {:<10} | {:<15} | {:<20} | {:<15} | {:<15} | {:<15} | {:<15} | {:<15}",
+                    path, upstream, auth_type, allowed_methods, oauth_client_id, rate_limit_per_minute, rate_limit_per_hour, algorithm, issuer, required_claims
                 );
             }
         }

@@ -5,6 +5,8 @@ use reqwest::Client;
 use tokio::runtime::Runtime;
 // Include OAuth tests
 mod oauth_tests;
+// Include JWT tests
+mod jwt_tests;
 
 #[test]
 fn add_route_required_params() {

@@ -1,4 +1,8 @@
 use axum::{routing::get, Router, Json, http::Method, extract::OriginalUri};
+
+#[cfg(test)]
+mod tests;
+mod test_server;
 use clap::{Parser, Subcommand};
 use sqlx::{sqlite::SqlitePool, Row};
 use serde::Deserialize;
@@ -42,37 +46,48 @@ async fn root() -> &'static str {
     "Welcome to Black Gate"
 }
 
-/// Handles incoming HTTP requests by forwarding them to configured upstream services.
-/// Performs route lookup in the database and applies any configured authentication.
-async fn handle_request(
-    state: axum::extract::State<AppState>,  
-    method: Method, 
+
+/// Handles requests with a JSON body (POST, PUT, etc)
+async fn handle_request_with_body(
+    state: axum::extract::State<AppState>,
+    method: Method,
     OriginalUri(uri): OriginalUri,
     Json(payload): Json<PostRequest>
 ) -> axum::response::Response {
+    handle_request_core(state, method, uri.path().to_string(), Some(payload.payload)).await
+}
 
-    // Extract the method, URI, and body from the request
-    let method = method.clone();
-    let path = uri.path().to_string();
-    let body = payload.payload;
+/// Handles requests with no body (GET, HEAD, etc)
+async fn handle_request_no_body(
+    state: axum::extract::State<AppState>,
+    method: Method,
+    OriginalUri(uri): OriginalUri,
+) -> axum::response::Response {
+    handle_request_core(state, method, uri.path().to_string(), None).await
+}
 
-    // metric code I commented out for now
-    // let start = std::time::Instant::now();
-
+/// Core handler logic, shared by both body/no-body handlers
+async fn handle_request_core(
+    state: axum::extract::State<AppState>,
+    method: Method,
+    path: String,
+    body: Option<String>,
+) -> axum::response::Response {
     // Query the database for the route
     let row = sqlx::query("SELECT upstream, auth_type, auth_value, allowed_methods FROM routes WHERE path = ?")
-        .bind(path)
+        .bind(&path)
         .fetch_optional(&state.db)
         .await
         .expect("Database query failed");
 
     match row {
         Some(row) => {
-
             // confirm the method is allowed
             let allowed_methods: String = row.get("allowed_methods");
+            println!("Allowed methods: {}", allowed_methods);
+            println!("Request method: {}", method.as_str());
             // If allowed_methods is empty, all methods are allowed
-            if !allowed_methods.is_empty() {            
+            if !allowed_methods.is_empty() {
                 let allowed_methods: Vec<&str> = allowed_methods.split(',').collect();
                 if !allowed_methods.contains(&method.as_str()) {
                     return axum::response::Response::builder()
@@ -96,22 +111,14 @@ async fn handle_request(
                 }
             }
 
+            if let Some(body) = body {
+                builder = builder.body(body);
+            }
+
             let response = builder
-                .body(body)
                 .send()
                 .await
                 .expect("Upstream request failed");
-
-            // Log metrics
-            // let latency_ms = start.elapsed().as_millis() as i64;
-            // let status = response.status().as_u16() as i32;
-            // sqlx::query("INSERT INTO metrics (path, latency_ms, status) VALUES (?, ?, ?)")
-            //     .bind(path)
-            //     .bind(latency_ms)
-            //     .bind(status)
-            //     .execute(&state.db)
-            //     .await
-            //     .expect("Failed to log metrics");
 
             let response_status = response.status();
             let response_body = response
@@ -130,11 +137,22 @@ async fn handle_request(
     }
 }
 
+/// test POST request
+/// curl -X POST http://localhost:3000/warehouse -d '{"payload": "test"}' -H "Content-Type: application/json"
+/// test GET request
+/// curl -X GET http://localhost:3000/warehouse-get
 async fn start_server(pool: SqlitePool) {
     let app_state = AppState { db: pool.clone() };
     let app = Router::new()
         .route("/", get(root))
-        .fallback(handle_request)
+        // GET/HEAD/OPTIONS/DELETE: no body
+        .route("/{*path}", get(handle_request_no_body))
+        .route("/{*path}", axum::routing::head(handle_request_no_body))
+        .route("/{*path}", axum::routing::delete(handle_request_no_body))
+        // POST/PUT/PATCH: expect body
+        .route("/{*path}", axum::routing::post(handle_request_with_body))
+        .route("/{*path}", axum::routing::put(handle_request_with_body))
+        .route("/{*path}", axum::routing::patch(handle_request_with_body))
         .with_state(app_state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
@@ -158,10 +176,13 @@ async fn main() {
             auth_value TEXT,
             allowed_methods TEXT,
             upstream TEXT NOT NULL
-        )
-        ;
+        );
         INSERT INTO routes (path, upstream, auth_type, auth_value, allowed_methods) 
-        VALUES ('/warehouse', 'https://httpbin.org/post', 'api-key', 'Bearer warehouse_key','GET')
+        VALUES ('/warehouse', 'https://httpbin.org/post', 'api-key', 'Bearer warehouse_key','POST');
+        INSERT INTO routes (path, upstream, auth_type, auth_value, allowed_methods) 
+        VALUES ('/warehouse-get', 'https://httpbin.org/post', 'api-key', 'Bearer warehouse_key','GET');
+        INSERT INTO routes (path, upstream, auth_type, auth_value, allowed_methods) 
+        VALUES ('/warehouse-none', 'https://httpbin.org/post', 'api-key', 'Bearer warehouse_key','');
         ",
     )
     .execute(&pool)

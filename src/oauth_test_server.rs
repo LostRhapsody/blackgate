@@ -112,7 +112,6 @@ pub async fn spawn_oauth_test_server() -> (SocketAddr, oneshot::Sender<()>) {
     // Create a shutdown channel
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
-    // Bind to a dynamic port (0) to avoid conflicts
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3001").await.unwrap();
     let addr = listener.local_addr().unwrap();
     

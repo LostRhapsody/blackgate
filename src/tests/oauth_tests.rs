@@ -12,7 +12,7 @@ use tokio::runtime::Runtime;
 fn test_oauth_client_credentials_flow() {
     // Start the BlackGate server with the OAuth test server via the StartOAuthTestServer command
     let mut child = StdCommand::new("cargo")
-        .args(["run", "--", "start-oauth-test-server"])
+        .args(["run", "--", "start-o-auth-test-server"])
         .spawn()
         .expect("Failed to start blackgate with OAuth test server");
     

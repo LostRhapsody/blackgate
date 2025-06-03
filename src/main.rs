@@ -281,6 +281,8 @@ async fn handle_request_core(
                         eprintln!("Unsupported auth type: {}", auth_type);
                     }
                 }
+            } else {
+                println!("No authentication required for route {}", path);
             }
 
             if let Some(body) = body {

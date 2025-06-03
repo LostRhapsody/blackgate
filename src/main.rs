@@ -1,18 +1,14 @@
-use axum::{routing::get, Router, Json, http::Method, extract::OriginalUri};
+use axum::{Router, extract::OriginalUri, http::Method, routing::get};
 
+mod oauth_test_server;
 #[cfg(test)]
 mod tests;
-mod test_server;
-mod oauth_test_server;
 use clap::{Parser, Subcommand};
-use sqlx::{sqlite::SqlitePool, Row};
-use serde::{
-    Deserialize,
-    Serialize,
-};
-use tokio::time::{Duration, Instant};
+use serde::{Deserialize, Serialize};
+use sqlx::{Row, sqlite::SqlitePool};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use tokio::time::{Duration, Instant};
 
 /// Structure to store OAuth tokens with expiration
 struct OAuthTokenCache {
@@ -53,20 +49,30 @@ struct Cli {
 enum Commands {
     /// Add a new route
     AddRoute {
-        #[arg(long)] path: String,
-        #[arg(long)] upstream: String,
-        #[arg(long)] auth_type: Option<String>,
-        #[arg(long)] auth_value: Option<String>,
-        #[arg(long)] allowed_methods: Option<String>,
+        #[arg(long)]
+        path: String,
+        #[arg(long)]
+        upstream: String,
+        #[arg(long)]
+        auth_type: Option<String>,
+        #[arg(long)]
+        auth_value: Option<String>,
+        #[arg(long)]
+        allowed_methods: Option<String>,
         // OAuth specific fields
-        #[arg(long)] oauth_token_url: Option<String>,
-        #[arg(long)] oauth_client_id: Option<String>,
-        #[arg(long)] oauth_client_secret: Option<String>,
-        #[arg(long)] oauth_scope: Option<String>,
+        #[arg(long)]
+        oauth_token_url: Option<String>,
+        #[arg(long)]
+        oauth_client_id: Option<String>,
+        #[arg(long)]
+        oauth_client_secret: Option<String>,
+        #[arg(long)]
+        oauth_scope: Option<String>,
     },
     /// Remove a route
     RemoveRoute {
-        #[arg(long)] path: String,
+        #[arg(long)]
+        path: String,
     },
     /// List all routes
     ListRoutes,
@@ -77,9 +83,10 @@ enum Commands {
     /// This command launches a local server to simulate OAuth authentication flows for development and testing.
     ///
     /// # Arguments
-    /// * `--port <PORT>` - NOT IMPLEMENTED - Optional port number to run the server on. If not specified, a default port will be used. 
+    /// * `--port <PORT>` - NOT IMPLEMENTED - Optional port number to run the server on. If not specified, a default port will be used.
     StartOAuthTestServer {
-        #[arg(long)] port: Option<u16>,
+        #[arg(long)]
+        port: Option<u16>,
     },
 }
 
@@ -106,9 +113,10 @@ async fn handle_request_with_body(
     state: axum::extract::State<AppState>,
     method: Method,
     OriginalUri(uri): OriginalUri,
-    Json(payload): Json<String>
+    payload: axum::body::Bytes,
 ) -> axum::response::Response {
-    handle_request_core(state, method, uri.path().to_string(), Some(payload)).await
+    let body_string = String::from_utf8_lossy(&payload).to_string();
+    handle_request_core(state, method, uri.path().to_string(), Some(body_string)).await
 }
 
 /// Handles requests with no body (GET, HEAD, etc)
@@ -130,15 +138,13 @@ struct OAuthTokenResponse {
 
 /// Get OAuth token from token endpoint
 async fn get_oauth_token(
-    token_url: &str, 
-    client_id: &str, 
-    client_secret: &str, 
-    scope: &str
+    token_url: &str,
+    client_id: &str,
+    client_secret: &str,
+    scope: &str,
 ) -> Result<(String, u64), Box<dyn std::error::Error + Send + Sync>> {
     println!("Requesting OAuth token from {}", token_url);
-    let client = reqwest::Client::builder()
-        .use_rustls_tls()
-        .build()?;
+    let client = reqwest::Client::builder().use_rustls_tls().build()?;
     let request_body = TokenRequest {
         grant_type: "client_credentials".into(),
         client_id: client_id.into(),
@@ -158,7 +164,7 @@ async fn get_oauth_token(
         Ok(resp) => {
             let token_response: OAuthTokenResponse = resp.json::<OAuthTokenResponse>().await?;
             let expires_in = token_response.expires_in.unwrap_or(3600); // Default to 1 hour
-    
+
             Ok((token_response.access_token, expires_in))
         }
         Err(e) => {
@@ -226,47 +232,69 @@ async fn handle_request_core(
                                 .body(axum::body::Body::from("API key is required"))
                                 .unwrap();
                         }
-                    },
+                    }
                     "oauth2" => {
                         println!("Using OAuth 2.0 authentication for route {}", path);
                         // Check for required OAuth fields
-                        if let (Some(token_url), Some(client_id), Some(client_secret), Some(scope)) = 
-                            (oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope) {
-                            
+                        if let (
+                            Some(token_url),
+                            Some(client_id),
+                            Some(client_secret),
+                            Some(scope),
+                        ) = (
+                            oauth_token_url,
+                            oauth_client_id,
+                            oauth_client_secret,
+                            oauth_scope,
+                        ) {
                             // Create a cache key for this specific OAuth configuration
-                            let cache_key = format!("{}:{}:{}:{}", token_url, client_id, client_secret, scope);
+                            let cache_key =
+                                format!("{}:{}:{}:{}", token_url, client_id, client_secret, scope);
                             println!("Using OAuth token cache key: {}", cache_key);
-                            
+
                             // Try to get token from cache
                             let token = {
                                 let token_cache = state.token_cache.lock().unwrap();
                                 token_cache.get_token(&cache_key)
                             };
                             println!("Cached token: {:?}", token);
-                            
+
                             let token = match token {
                                 Some(token) => token,
                                 None => {
                                     // No valid token in cache, fetch a new one
-                                    match get_oauth_token(&token_url, &client_id, &client_secret, &scope).await {
+                                    match get_oauth_token(
+                                        &token_url,
+                                        &client_id,
+                                        &client_secret,
+                                        &scope,
+                                    )
+                                    .await
+                                    {
                                         Ok((token, expires_in)) => {
                                             println!("Fetched new OAuth token: {}", token);
                                             // Store the token in cache
                                             let mut token_cache = state.token_cache.lock().unwrap();
-                                            token_cache.set_token(cache_key, token.clone(), expires_in);
+                                            token_cache.set_token(
+                                                cache_key,
+                                                token.clone(),
+                                                expires_in,
+                                            );
                                             token
-                                        },
+                                        }
                                         Err(e) => {
                                             eprintln!("OAuth token error: {:?}", e);
                                             return axum::response::Response::builder()
                                                 .status(500)
-                                                .body(axum::body::Body::from("OAuth authentication failed"))
+                                                .body(axum::body::Body::from(
+                                                    "OAuth authentication failed",
+                                                ))
                                                 .unwrap();
                                         }
                                     }
                                 }
                             };
-                            
+
                             // Add the token to the request
                             builder = builder.header("Authorization", format!("Bearer {}", token));
                         } else {
@@ -276,7 +304,7 @@ async fn handle_request_core(
                                 .body(axum::body::Body::from("OAuth configuration is incomplete"))
                                 .unwrap();
                         }
-                    },
+                    }
                     _ => {
                         eprintln!("Unsupported auth type: {}", auth_type);
                     }
@@ -289,16 +317,15 @@ async fn handle_request_core(
                 builder = builder.body(body);
             }
 
-            let response = builder
-                .send()
-                .await
-                .expect("Upstream request failed");
+            let response = builder.send().await.expect("Upstream request failed");
 
             let response_status = response.status();
-            let response_body = response
-                .text()
-                .await
-                .expect("Failed to read response body");
+            println!(
+                "Forwarded request to {} with status {}",
+                upstream, response_status
+            );
+            let response_body = response.text().await.expect("Failed to read response body");
+            println!("Response body: {}", response_body);
             axum::response::Response::builder()
                 .status(response_status)
                 .body(response_body.into())
@@ -321,7 +348,10 @@ async fn handle_request_core(
 /// curl -X POST http://localhost:3001/oauth/token -d '{"grant_type":"client_credentials","client_id":"test","client_secret":"test","scope":"test"}' -H "content-type: application/json"
 async fn start_server(pool: SqlitePool) {
     let token_cache = Arc::new(Mutex::new(OAuthTokenCache::new()));
-    let app_state = AppState { db: pool.clone(), token_cache };
+    let app_state = AppState {
+        db: pool.clone(),
+        token_cache,
+    };
     let app = Router::new()
         .route("/", get(root))
         // GET/HEAD/OPTIONS/DELETE: no body
@@ -335,8 +365,85 @@ async fn start_server(pool: SqlitePool) {
         .with_state(app_state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    println!("Black Gate running on http://{}", listener.local_addr().unwrap());
+    println!(
+        "Black Gate running on http://{}",
+        listener.local_addr().unwrap()
+    );
     axum::serve(listener, app).await.unwrap();
+}
+
+async fn start_server_with_shutdown(
+    pool: SqlitePool,
+    shutdown_rx: tokio::sync::oneshot::Receiver<()>,
+) {
+    let token_cache = Arc::new(Mutex::new(OAuthTokenCache::new()));
+    let app_state = AppState {
+        db: pool.clone(),
+        token_cache,
+    };
+    let app = Router::new()
+        .route("/", get(root))
+        // GET/HEAD/OPTIONS/DELETE: no body
+        .route("/{*path}", get(handle_request_no_body))
+        .route("/{*path}", axum::routing::head(handle_request_no_body))
+        .route("/{*path}", axum::routing::delete(handle_request_no_body))
+        // POST/PUT/PATCH: expect body
+        .route("/{*path}", axum::routing::post(handle_request_with_body))
+        .route("/{*path}", axum::routing::put(handle_request_with_body))
+        .route("/{*path}", axum::routing::patch(handle_request_with_body))
+        .with_state(app_state);
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    println!(
+        "Black Gate running on http://{}",
+        listener.local_addr().unwrap()
+    );
+
+    let server = axum::serve(listener, app).with_graceful_shutdown(async {
+        shutdown_rx.await.ok();
+        println!("Black Gate server shutting down...");
+    });
+
+    if let Err(err) = server.await {
+        eprintln!("Black Gate server error: {}", err);
+    }
+    println!("Black Gate server shutdown complete");
+}
+
+async fn start_oauth_test_server(
+    pool: SqlitePool,
+    _port: u16
+) {
+    let (_addr, oauth_shutdown_tx) = crate::oauth_test_server::spawn_oauth_test_server().await;
+
+    // Create shutdown channel for the main server
+    let (server_shutdown_tx, server_shutdown_rx) = tokio::sync::oneshot::channel();
+
+    // Start the main Black Gate server with graceful shutdown
+    let server_pool = pool.clone();
+    let server_handle = tokio::spawn(async move {
+        start_server_with_shutdown(server_pool, server_shutdown_rx).await;
+    });
+
+    // Wait for Ctrl+C signal
+    println!("Both servers are running. Press Ctrl+C to shutdown...");
+    match tokio::signal::ctrl_c().await {
+        Ok(()) => {
+            println!("Received shutdown signal, stopping servers...");
+
+            // Shutdown both servers gracefully
+            let _ = oauth_shutdown_tx.send(());
+            let _ = server_shutdown_tx.send(());
+
+            // Wait for the server to shut down properly
+            let _ = server_handle.await;
+
+            println!("All servers shutdown complete");
+        }
+        Err(err) => {
+            eprintln!("Failed to listen for shutdown signal: {}", err);
+        }
+    }
 }
 
 #[tokio::main]
@@ -378,16 +485,16 @@ async fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::AddRoute { 
-            path, 
-            upstream, 
-            auth_type, 
-            auth_value, 
+        Commands::AddRoute {
+            path,
+            upstream,
+            auth_type,
+            auth_value,
             allowed_methods,
             oauth_token_url,
             oauth_client_id,
             oauth_client_secret,
-            oauth_scope
+            oauth_scope,
         } => {
             sqlx::query(
                 "INSERT OR REPLACE INTO routes 
@@ -406,11 +513,14 @@ async fn main() {
                 .execute(&pool)
                 .await
                 .expect("Failed to add route");
-            
+
             // Print OAuth details if this is OAuth authentication
             if let Some(auth_type) = auth_type {
                 if auth_type == "oauth2" {
-                    println!("Added route: {} -> {} with OAuth 2.0 authentication", path, upstream);
+                    println!(
+                        "Added route: {} -> {} with OAuth 2.0 authentication",
+                        path, upstream
+                    );
                 } else {
                     println!("Added route: {} -> {}", path, upstream);
                 }
@@ -432,12 +542,14 @@ async fn main() {
                 .fetch_all(&pool)
                 .await
                 .expect("Failed to list routes");
-            
+
             // Header
-            println!("\n{:<15} | {:<25} | {:<10} | {:<15} | {:<20} | {:<20}", 
-                     "Path", "Upstream", "Auth Type", "Methods", "OAuth Client ID", "OAuth Scope");
+            println!(
+                "\n{:<15} | {:<25} | {:<10} | {:<15} | {:<20} | {:<20}",
+                "Path", "Upstream", "Auth Type", "Methods", "OAuth Client ID", "OAuth Scope"
+            );
             println!("{:-<110}", "");
-            
+
             for row in rows {
                 let path = row.get::<String, _>("path");
                 let upstream = row.get::<String, _>("upstream");
@@ -445,22 +557,18 @@ async fn main() {
                 let allowed_methods = row.get::<String, _>("allowed_methods");
                 let oauth_client_id = row.get::<String, _>("oauth_client_id");
                 let oauth_scope = row.get::<String, _>("oauth_scope");
-                
-                println!("{:<15} | {:<25} | {:<10} | {:<15} | {:<20} | {:<20}", 
-                         path, upstream, auth_type, allowed_methods, oauth_client_id, oauth_scope);
+
+                println!(
+                    "{:<15} | {:<25} | {:<10} | {:<15} | {:<20} | {:<20}",
+                    path, upstream, auth_type, allowed_methods, oauth_client_id, oauth_scope
+                );
             }
         }
         Commands::Start => {
             start_server(pool).await;
         }
         Commands::StartOAuthTestServer { port } => {
-            let _port = port.unwrap_or(3001);
-            let (_addr, shutdown_tx) = crate::oauth_test_server::spawn_oauth_test_server().await;
-            start_server(pool).await;
-            // Wait for shutdown signal
-            tokio::signal::ctrl_c().await.expect("Failed to listen for shutdown signal");
-            let _ = shutdown_tx.send(());
-            println!("OAuth Test Server shutting down");
+            start_oauth_test_server(pool, port.unwrap_or(3001)).await;
         }
     }
 }

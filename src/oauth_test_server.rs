@@ -4,13 +4,12 @@ use axum::{
     routing::{get, post},
     Router,
     response::Response,
-    middleware::{self, Next},
+    middleware::Next,
 };
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use tokio::sync::oneshot;
 use uuid::Uuid;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Deserialize)]
 struct TokenRequest {

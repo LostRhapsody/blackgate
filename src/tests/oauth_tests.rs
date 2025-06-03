@@ -1,23 +1,10 @@
 //! Integration tests for OAuth 2.0 implementation
-use assert_cmd::Command;
-use predicates::str::contains;
-use std::process::Command as StdCommand;
-use std::thread;
-use std::time::Duration;
 use reqwest::Client;
 use tokio::runtime::Runtime;
 
 /// Test the OAuth 2.0 client credentials flow
 #[test]
 fn test_oauth_client_credentials_flow() {
-    // Start the BlackGate server with the OAuth test server via the StartOAuthTestServer command
-    let mut child = StdCommand::new("cargo")
-        .args(["run", "--", "start-o-auth-test-server"])
-        .spawn()
-        .expect("Failed to start blackgate with OAuth test server");
-    
-    // Wait for both servers to start
-    thread::sleep(Duration::from_secs(3));
     
     // Create a runtime for making async HTTP requests
     let rt = Runtime::new().unwrap();
@@ -53,7 +40,4 @@ fn test_oauth_client_credentials_flow() {
     } else {
         panic!("Failed to get a response from the gateway");
     }
-    
-    // Clean up - terminate the server process
-    let _ = child.kill();
 }

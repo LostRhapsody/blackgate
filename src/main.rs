@@ -1,4 +1,4 @@
-use axum::{Router, extract::OriginalUri, http::Method, routing::get};
+use axum::{Router, extract::OriginalUri, http::Method, routing::{get, post, put, delete, patch, head}};
 
 mod oauth_test_server;
 #[cfg(test)]
@@ -43,6 +43,51 @@ impl OAuthTokenCache {
     }
 }
 
+/// Rate limiting structure to track requests per client/route
+struct RateLimiter {
+    requests: HashMap<String, Vec<Instant>>, // key -> timestamps of requests
+}
+
+impl RateLimiter {
+    fn new() -> Self {
+        Self {
+            requests: HashMap::new(),
+        }
+    }
+
+    /// Check if request is allowed based on rate limits
+    /// Returns true if allowed, false if rate limited
+    fn is_allowed(&mut self, key: &str, requests_per_minute: u32, requests_per_hour: u32) -> bool {
+        let now = Instant::now();
+        
+        // Clean up old entries and get current requests for this key
+        let requests = self.requests.entry(key.to_string()).or_insert_with(Vec::new);
+        
+        // Remove requests older than 1 hour
+        requests.retain(|&timestamp| now.duration_since(timestamp) < Duration::from_secs(3600));
+        
+        // Check hourly limit
+        if requests.len() >= requests_per_hour as usize {
+            debug!("Rate limit exceeded for key: {} (hourly limit: {})", key, requests_per_hour);
+            return false;
+        }
+        
+        // Check minute limit - count requests in the last minute
+        let minute_requests = requests.iter()
+            .filter(|&&timestamp| now.duration_since(timestamp) < Duration::from_secs(60))
+            .count();
+            
+        if minute_requests >= requests_per_minute as usize {
+            debug!("Rate limit exceeded for key: {} (minute limit: {})", key, requests_per_minute);
+            return false;
+        }
+        
+        // Add this request
+        requests.push(now);
+        true
+    }
+}
+
 #[derive(Parser)]
 #[command(name = "blackgate")]
 #[command(about = "The Black Gate API Gateway CLI")]
@@ -75,6 +120,11 @@ enum Commands {
         oauth_client_secret: Option<String>,
         #[arg(long)]
         oauth_scope: Option<String>,
+        // Rate limiting fields
+        #[arg(long, help = "Maximum requests per minute (default: 60)")]
+        rate_limit_per_minute: Option<u32>,
+        #[arg(long, help = "Maximum requests per hour (default: 1000)")]
+        rate_limit_per_hour: Option<u32>,
     },
     /// Remove a route from the API gateway
     #[command(name = "remove-route")]
@@ -109,6 +159,7 @@ enum Commands {
 struct AppState {
     db: SqlitePool,
     token_cache: Arc<Mutex<OAuthTokenCache>>,
+    rate_limiter: Arc<Mutex<RateLimiter>>,
 }
 
 /// Metrics data structure for tracking request/response information
@@ -314,24 +365,58 @@ async fn get_oauth_token(
     }
 }
 
-/// Handles requests with a JSON body (POST, PUT, etc)
-async fn handle_request_with_body(
+/// Handles GET requests
+async fn handle_get_request(
     state: axum::extract::State<AppState>,
-    method: Method,
+    OriginalUri(uri): OriginalUri,
+) -> axum::response::Response {
+    handle_request_core(state, Method::GET, uri.path().to_string(), None).await
+}
+
+/// Handles HEAD requests
+async fn handle_head_request(
+    state: axum::extract::State<AppState>,
+    OriginalUri(uri): OriginalUri,
+) -> axum::response::Response {
+    handle_request_core(state, Method::HEAD, uri.path().to_string(), None).await
+}
+
+/// Handles DELETE requests
+async fn handle_delete_request(
+    state: axum::extract::State<AppState>,
+    OriginalUri(uri): OriginalUri,
+) -> axum::response::Response {
+    handle_request_core(state, Method::DELETE, uri.path().to_string(), None).await
+}
+
+/// Handles POST requests
+async fn handle_post_request(
+    state: axum::extract::State<AppState>,
     OriginalUri(uri): OriginalUri,
     payload: axum::body::Bytes,
 ) -> axum::response::Response {
     let body_string = String::from_utf8_lossy(&payload).to_string();
-    handle_request_core(state, method, uri.path().to_string(), Some(body_string)).await
+    handle_request_core(state, Method::POST, uri.path().to_string(), Some(body_string)).await
 }
 
-/// Handles requests with no body (GET, HEAD, etc)
-async fn handle_request_no_body(
+/// Handles PUT requests
+async fn handle_put_request(
     state: axum::extract::State<AppState>,
-    method: Method,
     OriginalUri(uri): OriginalUri,
+    payload: axum::body::Bytes,
 ) -> axum::response::Response {
-    handle_request_core(state, method, uri.path().to_string(), None).await
+    let body_string = String::from_utf8_lossy(&payload).to_string();
+    handle_request_core(state, Method::PUT, uri.path().to_string(), Some(body_string)).await
+}
+
+/// Handles PATCH requests
+async fn handle_patch_request(
+    state: axum::extract::State<AppState>,
+    OriginalUri(uri): OriginalUri,
+    payload: axum::body::Bytes,
+) -> axum::response::Response {
+    let body_string = String::from_utf8_lossy(&payload).to_string();
+    handle_request_core(state, Method::PATCH, uri.path().to_string(), Some(body_string)).await
 }
 
 /// Core handler logic, shared by both body/no-body handlers
@@ -354,7 +439,7 @@ async fn handle_request_core(
     );
 
     // Query the database for the route
-    let row = sqlx::query("SELECT upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope FROM routes WHERE path = ?")
+    let row = sqlx::query("SELECT upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, rate_limit_per_minute, rate_limit_per_hour FROM routes WHERE path = ?")
         .bind(&path)
         .fetch_optional(&state.db)
         .await
@@ -385,6 +470,39 @@ async fn handle_request_core(
                         .body(axum::body::Body::from("Method Not Allowed"))
                         .unwrap();
                 }
+            }
+
+            // Extract rate limiting configuration
+            let rate_limit_per_minute: i64 = row.get("rate_limit_per_minute");
+            let rate_limit_per_hour: i64 = row.get("rate_limit_per_hour");
+
+            // Check rate limits - use path as the rate limiting key
+            // In production, you might want to use client IP or user ID instead
+            let rate_limit_key = format!("path:{}", path);
+            
+            // Check rate limits
+            let rate_limit_exceeded = {
+                let mut rate_limiter = state.rate_limiter.lock().unwrap();
+                !rate_limiter.is_allowed(&rate_limit_key, rate_limit_per_minute as u32, rate_limit_per_hour as u32)
+            };
+            
+            if rate_limit_exceeded {
+                warn!(
+                    request_id = %metrics.id,
+                    path = %path,
+                    rate_limit_per_minute = rate_limit_per_minute,
+                    rate_limit_per_hour = rate_limit_per_hour,
+                    "Rate limit exceeded"
+                );
+                
+                metrics.set_error("Rate limit exceeded".to_string());
+                store_metrics(&state.db, &metrics).await;
+                
+                return axum::response::Response::builder()
+                    .status(429)
+                    .header("Retry-After", "60") // Tell client to retry after 60 seconds
+                    .body(axum::body::Body::from("Too Many Requests"))
+                    .unwrap();
             }
 
             // Extract route configuration from the database row
@@ -537,20 +655,21 @@ async fn handle_request_core(
 /// Start the API gateway server, waits for incoming requests
 async fn start_server(pool: SqlitePool) {
     let token_cache = Arc::new(Mutex::new(OAuthTokenCache::new()));
+    let rate_limiter = Arc::new(Mutex::new(RateLimiter::new()));
     let app_state = AppState {
         db: pool.clone(),
         token_cache,
+        rate_limiter,
     };
     let app = Router::new()
         .route("/", get(root))
-        // GET/HEAD/OPTIONS/DELETE: no body
-        .route("/{*path}", get(handle_request_no_body))
-        .route("/{*path}", axum::routing::head(handle_request_no_body))
-        .route("/{*path}", axum::routing::delete(handle_request_no_body))
-        // POST/PUT/PATCH: expect body
-        .route("/{*path}", axum::routing::post(handle_request_with_body))
-        .route("/{*path}", axum::routing::put(handle_request_with_body))
-        .route("/{*path}", axum::routing::patch(handle_request_with_body))
+        // HTTP method specific routes
+        .route("/{*path}", get(handle_get_request))
+        .route("/{*path}", head(handle_head_request))
+        .route("/{*path}", delete(handle_delete_request))
+        .route("/{*path}", post(handle_post_request))
+        .route("/{*path}", put(handle_put_request))
+        .route("/{*path}", patch(handle_patch_request))
         .with_state(app_state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
@@ -565,20 +684,21 @@ async fn start_server_with_shutdown(
     shutdown_rx: tokio::sync::oneshot::Receiver<()>,
 ) {
     let token_cache = Arc::new(Mutex::new(OAuthTokenCache::new()));
+    let rate_limiter = Arc::new(Mutex::new(RateLimiter::new()));
     let app_state = AppState {
         db: pool.clone(),
         token_cache,
+        rate_limiter,
     };
     let app = Router::new()
         .route("/", get(root))
-        // GET/HEAD/OPTIONS/DELETE: no body
-        .route("/{*path}", get(handle_request_no_body))
-        .route("/{*path}", axum::routing::head(handle_request_no_body))
-        .route("/{*path}", axum::routing::delete(handle_request_no_body))
-        // POST/PUT/PATCH: expect body
-        .route("/{*path}", axum::routing::post(handle_request_with_body))
-        .route("/{*path}", axum::routing::put(handle_request_with_body))
-        .route("/{*path}", axum::routing::patch(handle_request_with_body))
+        // HTTP method specific routes
+        .route("/{*path}", get(handle_get_request))
+        .route("/{*path}", head(handle_head_request))
+        .route("/{*path}", delete(handle_delete_request))
+        .route("/{*path}", post(handle_post_request))
+        .route("/{*path}", put(handle_put_request))
+        .route("/{*path}", patch(handle_patch_request))
         .with_state(app_state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
@@ -743,6 +863,10 @@ async fn main() {
 
     // Create routes table if it doesn't exist
     sqlx::query(
+        /*
+        drop table if exists routes;
+        drop table if exists request_metrics;
+        */ 
         "
         CREATE TABLE IF NOT EXISTS routes (
             path TEXT PRIMARY KEY,
@@ -753,7 +877,9 @@ async fn main() {
             oauth_token_url TEXT,
             oauth_client_id TEXT,
             oauth_client_secret TEXT,
-            oauth_scope TEXT
+            oauth_scope TEXT,
+            rate_limit_per_minute INTEGER DEFAULT 60,
+            rate_limit_per_hour INTEGER DEFAULT 1000
         );
         
         CREATE TABLE IF NOT EXISTS request_metrics (
@@ -772,7 +898,9 @@ async fn main() {
             user_agent TEXT,
             error_message TEXT
         );
-        
+                
+        ",
+        /*
         INSERT INTO routes (path, upstream, auth_type, auth_value, allowed_methods) 
         VALUES ('/post-test', 'https://httpbin.org/post', 'api-key', 'Bearer warehouse_key','POST');
         INSERT INTO routes (path, upstream, auth_type, auth_value, allowed_methods) 
@@ -781,7 +909,7 @@ async fn main() {
         VALUES ('/no-method-test', 'https://httpbin.org/post', 'api-key', 'Bearer warehouse_key','');
         INSERT INTO routes (path, upstream, auth_type, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope) 
         VALUES ('/oauth-test', 'https://httpbin.org/anything', 'oauth2', 'GET', 'http://localhost:3001/oauth/token', 'test_client', 'test_secret', 'read:all');
-        ",
+        */
     )
     .execute(&pool)
     .await
@@ -801,6 +929,8 @@ async fn main() {
             oauth_client_id,
             oauth_client_secret,
             oauth_scope,
+            rate_limit_per_minute,
+            rate_limit_per_hour,
         } => {
             // Parse the auth type and convert to enum
             let auth_type_enum = match auth_type.as_ref() {
@@ -810,8 +940,8 @@ async fn main() {
             
             sqlx::query(
                 "INSERT OR REPLACE INTO routes 
-                (path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                (path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, rate_limit_per_minute, rate_limit_per_hour) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
                 .bind(path.clone())
                 .bind(upstream.clone())
@@ -822,6 +952,8 @@ async fn main() {
                 .bind(oauth_client_id.unwrap_or_else(|| "".into()))
                 .bind(oauth_client_secret.unwrap_or_else(|| "".into()))
                 .bind(oauth_scope.unwrap_or_else(|| "".into()))
+                .bind(rate_limit_per_minute.unwrap_or(60))
+                .bind(rate_limit_per_hour.unwrap_or(1000))
                 .execute(&pool)
                 .await
                 .expect("Failed to add route");
@@ -841,17 +973,17 @@ async fn main() {
             println!("Removed route: {}", path_copy);
         }
         Commands::ListRoutes => {
-            let rows = sqlx::query("SELECT path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope FROM routes")
+            let rows = sqlx::query("SELECT path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, rate_limit_per_minute, rate_limit_per_hour FROM routes")
                 .fetch_all(&pool)
                 .await
                 .expect("Failed to list routes");
 
             // Header
             println!(
-                "\n{:<15} | {:<25} | {:<10} | {:<15} | {:<20} | {:<20}",
-                "Path", "Upstream", "Auth Type", "Methods", "OAuth Client ID", "OAuth Scope"
+                "\n{:<15} | {:<25} | {:<10} | {:<15} | {:<20} | {:<15} | {:<15}",
+                "Path", "Upstream", "Auth Type", "Methods", "OAuth Client ID", "Rate/Min", "Rate/Hour"
             );
-            println!("{:-<110}", "");
+            println!("{:-<120}", "");
 
             for row in rows {
                 let path = row.get::<String, _>("path");
@@ -859,11 +991,12 @@ async fn main() {
                 let auth_type = row.get::<String, _>("auth_type");
                 let allowed_methods = row.get::<String, _>("allowed_methods");
                 let oauth_client_id = row.get::<String, _>("oauth_client_id");
-                let oauth_scope = row.get::<String, _>("oauth_scope");
+                let rate_limit_per_minute: i64 = row.get("rate_limit_per_minute");
+                let rate_limit_per_hour: i64 = row.get("rate_limit_per_hour");
 
                 println!(
-                    "{:<15} | {:<25} | {:<10} | {:<15} | {:<20} | {:<20}",
-                    path, upstream, auth_type, allowed_methods, oauth_client_id, oauth_scope
+                    "{:<15} | {:<25} | {:<10} | {:<15} | {:<20} | {:<15} | {:<15}",
+                    path, upstream, auth_type, allowed_methods, oauth_client_id, rate_limit_per_minute, rate_limit_per_hour
                 );
             }
         }

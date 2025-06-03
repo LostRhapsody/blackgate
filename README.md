@@ -8,7 +8,7 @@ The Black Gate Project, or Black Gate for short, is an open source project API G
 
 The goal is simple: A rust server that handles common API tasks such as managing routes, upstreams, authentication, authorization, metrics, logging, and documentation.
 
-Current Progress: 3%
+Current Progress: 5%
 
 Status:
 - Black Gate can accept a new route record, which includes an upstream and path, along with optional values for authentication and HTTP method.
@@ -32,11 +32,12 @@ Features:
 - Test Coverage
 - oAuth test server for testing oAuth Client Credential flows
 - HTTP Method Validation per-path
-- Detailed metrics for each request.
+- Detailed metrics for each request
+- Rate Limiting - Configurable per-minute and per-hour rate limits for each route
 
 Example (Using httpbin.org):
 ```bash
-$ cargo run -- add-route --path /warehouse --upstream https://httpbin.org/post --auth-type api-key --auth-value "Bearer warehouse_key"
+$ cargo run -- add-route --path /warehouse --upstream https://httpbin.org/post --auth-type api-key --auth-value "Bearer warehouse_key" --rate-limit-per-minute 30 --rate-limit-per-hour 500
 $ cargo run -- start
 # in second terminal
 $ curl -X POST http://localhost:3000/warehouse -d '{"payload": "test"}' -H "Content-Type: application/json"
@@ -61,7 +62,8 @@ $ curl -X POST http://localhost:3000/warehouse -d '{"payload": "test"}' -H "Cont
 
 Next Steps:
 - More Authentication schemes
-- A web based user interface with HTMX for speed and simplicity.
+- Enhanced rate limiting features (IP-based limiting, custom time windows)
+- A web based user interface with HTMX for speed and simplicity
 
 ## Metrics and Monitoring
 
@@ -70,9 +72,10 @@ Black Gate includes comprehensive metrics tracking for all requests passing thro
 ### Features
 - **Request/Response Logging**: Track all incoming requests with detailed information
 - **Timing Metrics**: Measure request duration from start to finish, including upstream response times
-- **Error Tracking**: Log authentication failures, routing errors, and upstream failures
+- **Error Tracking**: Log authentication failures, routing errors, upstream failures, and rate limit violations
 - **Authentication Metrics**: Track which authentication method was used for each request
 - **Data Size Tracking**: Monitor request and response payload sizes
+- **Rate Limit Monitoring**: Track rate limit violations with detailed error messages
 
 ### Viewing Metrics
 
@@ -116,6 +119,103 @@ $env:RUST_LOG = "blackgate=debug"
 cargo run -- start
 ```
 
+## Rate Limiting
+
+Black Gate includes built-in rate limiting functionality to protect your upstream services from overuse and ensure fair resource allocation.
+
+### Features
+- **Per-Route Configuration**: Each route can have its own rate limiting settings
+- **Dual Time Windows**: Separate limits for per-minute and per-hour windows
+- **Automatic Enforcement**: Returns HTTP 429 (Too Many Requests) when limits are exceeded
+- **Sliding Window**: Uses precise timestamp tracking for accurate rate limiting
+- **Integration with Metrics**: Rate limit violations are logged in the metrics system
+
+### Default Limits
+- **Per-Minute**: 60 requests per minute (default)
+- **Per-Hour**: 1000 requests per hour (default)
+
+### Adding Routes with Rate Limits
+
+**Basic route with default rate limits:**
+```bash
+cargo run -- add-route --path /api/data --upstream https://api.example.com/data
+```
+
+**Route with custom rate limits:**
+```bash
+cargo run -- add-route \
+  --path /api/restricted \
+  --upstream https://api.example.com/restricted \
+  --rate-limit-per-minute 10 \
+  --rate-limit-per-hour 100
+```
+
+**Route with authentication and rate limits:**
+```bash
+cargo run -- add-route \
+  --path /api/secure \
+  --upstream https://api.example.com/secure \
+  --auth-type api-key \
+  --auth-value "Bearer secret_key" \
+  --rate-limit-per-minute 5 \
+  --rate-limit-per-hour 50
+```
+
+### Viewing Route Rate Limits
+
+List all routes with their rate limiting configuration:
+```bash
+cargo run -- list-routes
+```
+
+Output includes rate limiting information:
+```
+Path: /api/data
+Upstream: https://api.example.com/data
+Method: Any
+Auth Type: None
+Rate/Min: 60
+Rate/Hour: 1000
+```
+
+### Rate Limit Behavior
+
+When a client exceeds the rate limit:
+- **HTTP Status**: 429 (Too Many Requests)
+- **Retry-After Header**: Indicates when the client can retry (60 seconds)
+- **Metrics Logging**: Violation is recorded with "Rate limit exceeded" error message
+
+### Rate Limit Reset
+
+Rate limits use sliding time windows:
+- **Per-Minute**: Resets on a rolling 60-second basis
+- **Per-Hour**: Resets on a rolling 3600-second basis
+
+Old requests are automatically cleaned up from the tracking system as they expire.
+
+### Examples of Rate Limiting in Action
+
+**Testing rate limits:**
+```bash
+# Add a route with strict limits for testing
+cargo run -- add-route --path /test --upstream https://httpbin.org/get --rate-limit-per-minute 2 --rate-limit-per-hour 5
+
+# Start the server
+cargo run -- start
+
+# Test rapid requests (will hit rate limit after 2 requests)
+curl http://localhost:3000/test  # Success
+curl http://localhost:3000/test  # Success  
+curl http://localhost:3000/test  # 429 Too Many Requests
+```
+
+**Rate limit response:**
+```json
+{
+  "error": "Rate limit exceeded. Try again later."
+}
+```
+
 Long Term Goals:
 - Black Gate will be self-hosted or hosted by "Black Gate" in the cloud for a subscription fee.
 - Payment Processing Gateway centric features, with the goal of providing flexible payment provider support to B2B and retail websites.
@@ -136,4 +236,14 @@ curl -X GET http://localhost:3000/oauth-test
 test OAuth request directly on the oauth test server
 ```bash
 curl -X POST http://localhost:3001/oauth/token -d '{"grant_type":"client_credentials","client_id":"test","client_secret":"test","scope":"test"}' -H "content-type: application/json"
+```
+test rate limiting
+```bash
+# Add a test route with low limits
+cargo run -- add-route --path /rate-test --upstream https://httpbin.org/get --rate-limit-per-minute 2 --rate-limit-per-hour 5
+
+# Test multiple requests to trigger rate limiting
+curl http://localhost:3000/rate-test  # Should succeed
+curl http://localhost:3000/rate-test  # Should succeed
+curl http://localhost:3000/rate-test  # Should return 429 Too Many Requests
 ```

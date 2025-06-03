@@ -5,6 +5,7 @@ mod oauth_test_server;
 mod tests;
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
+use sqlx::sqlite::SqliteValueRef;
 use sqlx::{Row, sqlite::SqlitePool};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -152,6 +153,14 @@ impl AuthType {
             AuthType::None => "none",
             AuthType::ApiKey => "api-key",
             AuthType::OAuth2 => "oauth2",
+        }
+    }
+
+    fn to_display_string(&self) -> String {
+        match self {
+            AuthType::None => "No".to_string(),
+            AuthType::ApiKey => "API Key".to_string(),
+            AuthType::OAuth2 => "OAuth 2.0".to_string(),
         }
     }
 }
@@ -576,23 +585,9 @@ async fn main() {
                 .expect("Failed to add route");
 
             // Print OAuth details if this is OAuth authentication
-            match auth_type_enum {
-                AuthType::OAuth2 => {
-                    println!(
-                        "Added route: {} -> {} with OAuth 2.0 authentication",
-                        path, upstream
-                    );
-                }
-                AuthType::ApiKey => {
-                    println!(
-                        "Added route: {} -> {} with API key authentication",
-                        path, upstream
-                    );
-                }
-                AuthType::None => {
-                    println!("Added route: {} -> {} with no authentication", path, upstream);
-                }
-            }
+            println!("Added route: {} -> {} with {} authentication",
+                path, upstream, auth_type_enum.to_display_string()
+            );            
         }
         Commands::RemoveRoute { path } => {
             let path_copy = path.clone();

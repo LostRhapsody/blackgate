@@ -112,6 +112,50 @@ struct OAuthTokenResponse {
     // Other fields may be present but we don't need them for now
 }
 
+/// Route configuration structure to hold authentication details
+#[derive(Debug)]
+struct RouteConfig {
+    upstream: String,
+    auth_type: AuthType,
+    auth_value: Option<String>,
+    oauth_token_url: Option<String>,
+    oauth_client_id: Option<String>,
+    oauth_client_secret: Option<String>,
+    oauth_scope: Option<String>,
+}
+
+/// Authentication types supported by the gateway
+#[derive(Debug, Clone, PartialEq)]
+enum AuthType {
+    None,
+    ApiKey,
+    OAuth2,
+}
+
+impl AuthType {
+    /// Parse authentication type from string
+    fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "api-key" | "apikey" => AuthType::ApiKey,
+            "oauth2" | "oauth" => AuthType::OAuth2,
+            "none" | "" => AuthType::None,
+            _ => {
+                eprintln!("Unknown auth type '{}', defaulting to None", s);
+                AuthType::None
+            }
+        }
+    }
+
+    /// Convert authentication type to string for database storage
+    fn to_string(&self) -> &'static str {
+        match self {
+            AuthType::None => "none",
+            AuthType::ApiKey => "api-key",
+            AuthType::OAuth2 => "oauth2",
+        }
+    }
+}
+
 async fn root() -> &'static str {
     "Welcome to Black Gate"
 }
@@ -204,9 +248,10 @@ async fn handle_request_core(
             }
 
             // Extract route configuration from the database row
+            let auth_type_str: String = row.get("auth_type");
             let route_config = RouteConfig {
                 upstream: row.get("upstream"),
-                auth_type: row.get("auth_type"),
+                auth_type: AuthType::from_str(&auth_type_str),
                 auth_value: row.get("auth_value"),
                 oauth_token_url: row.get("oauth_token_url"),
                 oauth_client_id: row.get("oauth_client_id"),
@@ -214,7 +259,7 @@ async fn handle_request_core(
                 oauth_scope: row.get("oauth_scope"),
             };
 
-            // Create the request builder
+            // Create the request builder           
             let client = reqwest::Client::new();
             let builder = client.request(method, &route_config.upstream);
 
@@ -368,18 +413,6 @@ async fn start_oauth_test_server(
     }
 }
 
-/// Route configuration structure to hold authentication details
-#[derive(Debug)]
-struct RouteConfig {
-    upstream: String,
-    auth_type: Option<String>,
-    auth_value: Option<String>,
-    oauth_token_url: Option<String>,
-    oauth_client_id: Option<String>,
-    oauth_client_secret: Option<String>,
-    oauth_scope: Option<String>,
-}
-
 /// Apply authentication to a request builder based on the route configuration
 async fn apply_authentication(
     builder: reqwest::RequestBuilder,
@@ -387,89 +420,84 @@ async fn apply_authentication(
     path: &str,
     token_cache: Arc<Mutex<OAuthTokenCache>>,
 ) -> Result<reqwest::RequestBuilder, axum::response::Response> {
-    if let Some(auth_type) = &route_config.auth_type {
-        match auth_type.as_str() {
-            "api-key" => {
-                if let Some(auth_value) = &route_config.auth_value {
-                    println!("Using API key authentication for route {}", path);
-                    Ok(builder.header("Authorization", auth_value))
-                } else {
-                    eprintln!("Missing API key for route {}", path);
-                    Err(axum::response::Response::builder()
-                        .status(500)
-                        .body(axum::body::Body::from("API key is required"))
-                        .unwrap())
-                }
-            }
-            "oauth2" => {
-                println!("Using OAuth 2.0 authentication for route {}", path);
-                // Check for required OAuth fields
-                if let (
-                    Some(token_url),
-                    Some(client_id),
-                    Some(client_secret),
-                    Some(scope),
-                ) = (
-                    &route_config.oauth_token_url,
-                    &route_config.oauth_client_id,
-                    &route_config.oauth_client_secret,
-                    &route_config.oauth_scope,
-                ) {
-                    // Create a cache key for this specific OAuth configuration
-                    let cache_key =
-                        format!("{}:{}:{}:{}", token_url, client_id, client_secret, scope);
-                    println!("Using OAuth token cache key: {}", cache_key);
-
-                    // Try to get token from cache
-                    let token = {
-                        let token_cache = token_cache.lock().unwrap();
-                        token_cache.get_token(&cache_key)
-                    };
-                    println!("Cached token: {:?}", token);
-
-                    let token = match token {
-                        Some(token) => token,
-                        None => {
-                            // No valid token in cache, fetch a new one
-                            match get_oauth_token(token_url, client_id, client_secret, scope).await {
-                                Ok((token, expires_in)) => {
-                                    println!("Fetched new OAuth token: {}", token);
-                                    // Store the token in cache
-                                    let mut token_cache = token_cache.lock().unwrap();
-                                    token_cache.set_token(cache_key, token.clone(), expires_in);
-                                    token
-                                }
-                                Err(e) => {
-                                    eprintln!("OAuth token error: {:?}", e);
-                                    return Err(axum::response::Response::builder()
-                                        .status(500)
-                                        .body(axum::body::Body::from(
-                                            "OAuth authentication failed",
-                                        ))
-                                        .unwrap());
-                                }
-                            }
-                        }
-                    };
-
-                    // Add the token to the request
-                    Ok(builder.header("Authorization", format!("Bearer {}", token)))
-                } else {
-                    eprintln!("Missing OAuth configuration for route {}", path);
-                    Err(axum::response::Response::builder()
-                        .status(500)
-                        .body(axum::body::Body::from("OAuth configuration is incomplete"))
-                        .unwrap())
-                }
-            }
-            _ => {
-                eprintln!("Unsupported auth type: {}", auth_type);
-                Ok(builder)
+    match route_config.auth_type {
+        AuthType::ApiKey => {
+            if let Some(auth_value) = &route_config.auth_value {
+                println!("Using API key authentication for route {}", path);
+                Ok(builder.header("Authorization", auth_value))
+            } else {
+                eprintln!("Missing API key for route {}", path);
+                Err(axum::response::Response::builder()
+                    .status(500)
+                    .body(axum::body::Body::from("API key is required"))
+                    .unwrap())
             }
         }
-    } else {
-        println!("No authentication required for route {}", path);
-        Ok(builder)
+        AuthType::OAuth2 => {
+            println!("Using OAuth 2.0 authentication for route {}", path);
+            // Check for required OAuth fields
+            if let (
+                Some(token_url),
+                Some(client_id),
+                Some(client_secret),
+                Some(scope),
+            ) = (
+                &route_config.oauth_token_url,
+                &route_config.oauth_client_id,
+                &route_config.oauth_client_secret,
+                &route_config.oauth_scope,
+            ) {
+                // Create a cache key for this specific OAuth configuration
+                let cache_key =
+                    format!("{}:{}:{}:{}", token_url, client_id, client_secret, scope);
+                println!("Using OAuth token cache key: {}", cache_key);
+
+                // Try to get token from cache
+                let token = {
+                    let token_cache = token_cache.lock().unwrap();
+                    token_cache.get_token(&cache_key)
+                };
+                println!("Cached token: {:?}", token);
+
+                let token = match token {
+                    Some(token) => token,
+                    None => {
+                        // No valid token in cache, fetch a new one
+                        match get_oauth_token(token_url, client_id, client_secret, scope).await {
+                            Ok((token, expires_in)) => {
+                                println!("Fetched new OAuth token: {}", token);
+                                // Store the token in cache
+                                let mut token_cache = token_cache.lock().unwrap();
+                                token_cache.set_token(cache_key, token.clone(), expires_in);
+                                token
+                            }
+                            Err(e) => {
+                                eprintln!("OAuth token error: {:?}", e);
+                                return Err(axum::response::Response::builder()
+                                    .status(500)
+                                    .body(axum::body::Body::from(
+                                        "OAuth authentication failed",
+                                    ))
+                                    .unwrap());
+                            }
+                        }
+                    }
+                };
+
+                // Add the token to the request
+                Ok(builder.header("Authorization", format!("Bearer {}", token)))
+            } else {
+                eprintln!("Missing OAuth configuration for route {}", path);
+                Err(axum::response::Response::builder()
+                    .status(500)
+                    .body(axum::body::Body::from("OAuth configuration is incomplete"))
+                    .unwrap())
+            }
+        }
+        AuthType::None => {
+            println!("No authentication required for route {}", path);
+            Ok(builder)
+        }
     }
 }
 
@@ -523,6 +551,12 @@ async fn main() {
             oauth_client_secret,
             oauth_scope,
         } => {
+            // Parse the auth type and convert to enum
+            let auth_type_enum = match auth_type.as_ref() {
+                Some(auth_str) => AuthType::from_str(auth_str),
+                None => AuthType::None,
+            };
+            
             sqlx::query(
                 "INSERT OR REPLACE INTO routes 
                 (path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope) 
@@ -530,7 +564,7 @@ async fn main() {
             )
                 .bind(path.clone())
                 .bind(upstream.clone())
-                .bind(auth_type.clone().unwrap_or_else(|| "none".into()))
+                .bind(auth_type_enum.to_string())
                 .bind(auth_value.unwrap_or_else(|| "".into()))
                 .bind(allowed_methods.unwrap_or_else(|| "".into()))
                 .bind(oauth_token_url.unwrap_or_else(|| "".into()))
@@ -542,17 +576,22 @@ async fn main() {
                 .expect("Failed to add route");
 
             // Print OAuth details if this is OAuth authentication
-            if let Some(auth_type) = auth_type {
-                if auth_type == "oauth2" {
+            match auth_type_enum {
+                AuthType::OAuth2 => {
                     println!(
                         "Added route: {} -> {} with OAuth 2.0 authentication",
                         path, upstream
                     );
-                } else {
-                    println!("Added route: {} -> {}", path, upstream);
                 }
-            } else {
-                println!("Added route: {} -> {}", path, upstream);
+                AuthType::ApiKey => {
+                    println!(
+                        "Added route: {} -> {} with API key authentication",
+                        path, upstream
+                    );
+                }
+                AuthType::None => {
+                    println!("Added route: {} -> {} with no authentication", path, upstream);
+                }
             }
         }
         Commands::RemoveRoute { path } => {

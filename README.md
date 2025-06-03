@@ -65,3 +65,21 @@ Next Steps:
 Long Term Goals:
 - Black Gate will be self-hosted or hosted by "Black Gate" in the cloud for a subscription fee.
 - Payment Processing Gateway centric features, with the goal of providing flexible payment provider support to B2B and retail websites.
+
+Tests:
+test POST request
+```bash
+curl -X POST http://localhost:3000/warehouse -d '{"payload": "test"}' -H "Content-Type: application/json"
+```
+test GET request
+```bash
+curl -X GET http://localhost:3000/warehouse-get
+```
+test OAuth request
+```bash
+curl -X GET http://localhost:3000/oauth-test
+```
+test OAuth request directly on the oauth test server
+```bash
+curl -X POST http://localhost:3001/oauth/token -d '{"grant_type":"client_credentials","client_id":"test","client_secret":"test","scope":"test"}' -H "content-type: application/json"
+```

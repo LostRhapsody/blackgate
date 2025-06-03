@@ -16,12 +16,14 @@ struct OAuthTokenCache {
 }
 
 impl OAuthTokenCache {
+    /// Create a new OAuth token cache
     fn new() -> Self {
         OAuthTokenCache {
             tokens: HashMap::new(),
         }
     }
 
+    /// Get a token from the cache if it is still valid
     fn get_token(&self, key: &str) -> Option<String> {
         if let Some((token, expiry)) = self.tokens.get(key) {
             if Instant::now() < *expiry {
@@ -31,6 +33,7 @@ impl OAuthTokenCache {
         None
     }
 
+    /// Set a token in the cache with an expiration time
     fn set_token(&mut self, key: String, token: String, expires_in: u64) {
         let expiry = Instant::now() + Duration::from_secs(expires_in);
         self.tokens.insert(key, (token, expiry));
@@ -90,12 +93,14 @@ enum Commands {
     },
 }
 
+/// Application state shared across routes, contains DB pool and token cache
 #[derive(Clone)]
 struct AppState {
     db: SqlitePool,
     token_cache: Arc<Mutex<OAuthTokenCache>>,
 }
 
+/// Token request structure for OAuth
 #[derive(Serialize)]
 struct TokenRequest {
     grant_type: String,
@@ -155,6 +160,7 @@ impl AuthType {
         }
     }
 
+    /// Convert authentication type to a user-friendly display string
     fn to_display_string(&self) -> String {
         match self {
             AuthType::None => "No".to_string(),
@@ -164,6 +170,7 @@ impl AuthType {
     }
 }
 
+/// Root handler for the API gateway
 async fn root() -> &'static str {
     "Welcome to Black Gate"
 }
@@ -295,12 +302,7 @@ async fn handle_request_core(
             let response = builder.send().await.expect("Upstream request failed");
 
             let response_status = response.status();
-            println!(
-                "Forwarded request to {} with status {}",
-                route_config.upstream, response_status
-            );
             let response_body = response.text().await.expect("Failed to read response body");
-            println!("Response body: {}", response_body);
             axum::response::Response::builder()
                 .status(response_status)
                 .body(response_body.into())
@@ -313,14 +315,7 @@ async fn handle_request_core(
     }
 }
 
-/// test POST request
-/// curl -X POST http://localhost:3000/warehouse -d '{"payload": "test"}' -H "Content-Type: application/json"
-/// test GET request
-/// curl -X GET http://localhost:3000/warehouse-get
-/// test OAuth request
-/// curl -X GET http://localhost:3000/oauth-test
-/// test OAuth request directly on the oauth test server
-/// curl -X POST http://localhost:3001/oauth/token -d '{"grant_type":"client_credentials","client_id":"test","client_secret":"test","scope":"test"}' -H "content-type: application/json"
+/// Start the API gateway server, waits for incoming requests
 async fn start_server(pool: SqlitePool) {
     let token_cache = Arc::new(Mutex::new(OAuthTokenCache::new()));
     let app_state = AppState {
@@ -347,6 +342,7 @@ async fn start_server(pool: SqlitePool) {
     axum::serve(listener, app).await.unwrap();
 }
 
+/// Start the API gateway server with graceful shutdown support, used for oAuth testing
 async fn start_server_with_shutdown(
     pool: SqlitePool,
     shutdown_rx: tokio::sync::oneshot::Receiver<()>,
@@ -385,6 +381,7 @@ async fn start_server_with_shutdown(
     println!("Black Gate server shutdown complete");
 }
 
+/// Start the OAuth test server and the main Black Gate server, used for oAuth testing
 async fn start_oauth_test_server(
     pool: SqlitePool,
     _port: u16

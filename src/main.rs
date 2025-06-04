@@ -208,7 +208,7 @@ impl RequestMetrics {
             response_size_bytes: None,
             response_status_code: None,
             upstream_url: None,
-            auth_type: "none".to_string(),
+            auth_type: AuthType::None.to_string().to_string(),
             client_ip: None,
             user_agent: None,
             error_message: None,
@@ -1208,7 +1208,8 @@ async fn main() {
             for row in rows {
                 let path = row.get::<String, _>("path");
                 let upstream = row.get::<String, _>("upstream");
-                let auth_type = row.get::<String, _>("auth_type");
+                let auth_type_str = row.get::<String, _>("auth_type");
+                let auth_type = AuthType::from_str(&auth_type_str);
                 let allowed_methods = row.get::<String, _>("allowed_methods");
                 let oauth_client_id = row.get::<String, _>("oauth_client_id");
                 let rate_limit_per_minute: i64 = row.get("rate_limit_per_minute");
@@ -1219,7 +1220,7 @@ async fn main() {
 
                 println!(
                     "{:<15} | {:<25} | {:<10} | {:<15} | {:<20} | {:<15} | {:<15} | {:<15} | {:<15} | {:<15}",
-                    path, upstream, auth_type, allowed_methods, oauth_client_id, rate_limit_per_minute, rate_limit_per_hour, algorithm, issuer, required_claims
+                    path, upstream, auth_type.to_display_string(), allowed_methods, oauth_client_id, rate_limit_per_minute, rate_limit_per_hour, algorithm, issuer, required_claims
                 );
             }
         }
@@ -1297,11 +1298,12 @@ async fn main() {
                     let resp_size = row.get::<Option<i64>, _>("response_size_bytes")
                         .map(|s| s.to_string())
                         .unwrap_or_else(|| "N/A".to_string());
-                    let auth_type = row.get::<String, _>("auth_type");
+                    let auth_type_str = row.get::<String, _>("auth_type");
+                    let auth_type = AuthType::from_str(&auth_type_str);
 
                     println!(
                         "{:<8} | {:<15} | {:<6} | {:<20} | {:<8} | {:<6} | {:<10} | {:<12} | {:<10}",
-                        short_id, path, method, &timestamp[..19], duration, status, req_size, resp_size, auth_type
+                        short_id, path, method, &timestamp[..19], duration, status, req_size, resp_size, auth_type.to_display_string()
                     );
 
                     // Show error message if present

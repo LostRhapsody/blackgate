@@ -58,11 +58,11 @@ pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
                     </thead>
                     <tbody>
         "##);
-
         for row in rows {
             let path: String = row.get("path");
             let upstream: String = row.get("upstream");
-            let auth_type: String = row.get("auth_type");
+            let auth_type_str: String = row.get("auth_type");
+            let auth_type = AuthType::from_str(&auth_type_str);
             let rate_min: i64 = row.get("rate_limit_per_minute");
             let rate_hour: i64 = row.get("rate_limit_per_hour");
 
@@ -75,7 +75,7 @@ pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
                             <td>{}</td>
                             <td><button hx-delete="/web/routes/{}" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Delete this route?">Delete</button></td>
                         </tr>
-            "##, path, upstream, auth_type, rate_min, rate_hour, path));
+            "##, path, upstream, auth_type.to_display_string(), rate_min, rate_hour, path));
         }
 
         html.push_str("</tbody></table>");
@@ -248,7 +248,8 @@ pub async fn metrics_view(State(state): State<AppState>, Query(query): Query<Met
             let resp_size = row.get::<Option<i64>, _>("response_size_bytes")
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "N/A".to_string());
-            let auth_type: String = row.get("auth_type");
+            let auth_type_str: String = row.get("auth_type");
+            let auth_type = AuthType::from_str(&auth_type_str);
 
             html.push_str(&format!(r##"
                 <tr>
@@ -262,7 +263,7 @@ pub async fn metrics_view(State(state): State<AppState>, Query(query): Query<Met
                     <td>{}</td>
                     <td>{}</td>
                 </tr>
-            "##, short_id, path, method, &timestamp[..19], duration, status, req_size, resp_size, auth_type));
+            "##, short_id, path, method, &timestamp[..19], duration, status, req_size, resp_size, auth_type.to_display_string()));
 
             // Show error message if present
             if let Some(error) = row.get::<Option<String>, _>("error_message") {
@@ -338,15 +339,17 @@ pub async fn add_route_form() -> Html<String> {
 
 pub async fn auth_fields_form(Query(params): Query<std::collections::HashMap<String, String>>) -> Html<String> {
     let default_auth_type = "none".to_string();
-    let auth_type = params.get("auth_type").unwrap_or(&default_auth_type);
-    let html = match auth_type.as_str() {
-        "api-key" => r##"
+    let auth_type_str = params.get("auth_type").unwrap_or(&default_auth_type);
+    let auth_type = AuthType::from_str(auth_type_str);
+    
+    let html = match auth_type {
+        AuthType::ApiKey => r##"
             <div>
                 <label for="auth_value">API Key (with Bearer prefix if needed):</label><br>
                 <input type="text" id="auth_value" name="auth_value" placeholder="Bearer your-api-key">
             </div>
         "##,
-        "oauth2" => r##"
+        AuthType::OAuth2 => r##"
             <div>
                 <label for="oauth_token_url">OAuth Token URL:</label><br>
                 <input type="url" id="oauth_token_url" name="oauth_token_url" placeholder="https://oauth.example.com/token">
@@ -364,7 +367,7 @@ pub async fn auth_fields_form(Query(params): Query<std::collections::HashMap<Str
                 <input type="text" id="oauth_scope" name="oauth_scope" placeholder="read:all">
             </div>
         "##,
-        "jwt" => r##"
+        AuthType::Jwt => r##"
             <div>
                 <label for="jwt_secret">JWT Secret:</label><br>
                 <input type="password" id="jwt_secret" name="jwt_secret">
@@ -394,13 +397,13 @@ pub async fn auth_fields_form(Query(params): Query<std::collections::HashMap<Str
                 <input type="text" id="auth_value" name="auth_value" placeholder="Bearer your-jwt-token">
             </div>
         "##,
-        "oidc" => r##"
+        AuthType::Oidc => r##"
             <div>
                 <label for="auth_value">OIDC Configuration (placeholder - not fully implemented):</label><br>
                 <input type="text" id="auth_value" name="auth_value">
             </div>
         "##,
-        _ => "",
+        AuthType::None => "",
     };
     
     Html(html.to_string())

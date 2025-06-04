@@ -59,9 +59,180 @@ pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
     Html(html)
 }
 
-pub async fn metrics_view(State(_state): State<AppState>) -> Html<String> {
-    // Similar dynamic content only...
-    Html("<h2>Metrics will go here</h2>".to_string())
+pub async fn metrics_view(State(state): State<AppState>) -> Html<String> {
+    // Get metrics statistics
+    let stats_query = sqlx::query(
+        "SELECT
+            COUNT(*) as total_requests,
+            AVG(duration_ms) as avg_duration_ms,
+            MIN(duration_ms) as min_duration_ms,
+            MAX(duration_ms) as max_duration_ms,
+            COUNT(CASE WHEN response_status_code >= 200 AND response_status_code < 300 THEN 1 END) as success_count,
+            COUNT(CASE WHEN response_status_code >= 400 THEN 1 END) as error_count,
+            SUM(request_size_bytes) as total_request_bytes,
+            SUM(response_size_bytes) as total_response_bytes
+        FROM request_metrics
+        WHERE response_timestamp IS NOT NULL"
+    )
+    .fetch_optional(&state.db)
+    .await
+    .unwrap_or_default();
+
+    let mut html = String::from(r##"
+        <h2>Metrics Dashboard</h2>
+        <div class="metrics-container">
+    "##);
+
+    // Add statistics summary
+    if let Some(row) = stats_query {
+        let total_requests: i64 = row.get("total_requests");
+        let success_count: i64 = row.get("success_count");
+        let error_count: i64 = row.get("error_count");
+        let avg_duration: f64 = row.get::<Option<f64>, _>("avg_duration_ms").unwrap_or(0.0);
+        let min_duration: i64 = row.get::<Option<i64>, _>("min_duration_ms").unwrap_or(0);
+        let max_duration: i64 = row.get::<Option<i64>, _>("max_duration_ms").unwrap_or(0);
+        let total_request_bytes: i64 = row.get::<Option<i64>, _>("total_request_bytes").unwrap_or(0);
+        let total_response_bytes: i64 = row.get::<Option<i64>, _>("total_response_bytes").unwrap_or(0);
+        
+        let success_rate = if total_requests > 0 {
+            (success_count as f64 / total_requests as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        html.push_str(&format!(r##"
+            <div class="metrics-summary">
+                <h3>Statistics Summary</h3>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <label>Total Requests:</label>
+                        <span>{}</span>
+                    </div>
+                    <div class="stat-item">
+                        <label>Success Rate:</label>
+                        <span>{:.1}%</span>
+                    </div>
+                    <div class="stat-item">
+                        <label>Error Count:</label>
+                        <span>{}</span>
+                    </div>
+                    <div class="stat-item">
+                        <label>Average Duration:</label>
+                        <span>{:.2}ms</span>
+                    </div>
+                    <div class="stat-item">
+                        <label>Min Duration:</label>
+                        <span>{}ms</span>
+                    </div>
+                    <div class="stat-item">
+                        <label>Max Duration:</label>
+                        <span>{}ms</span>
+                    </div>
+                    <div class="stat-item">
+                        <label>Total Request Bytes:</label>
+                        <span>{}</span>
+                    </div>
+                    <div class="stat-item">
+                        <label>Total Response Bytes:</label>
+                        <span>{}</span>
+                    </div>
+                </div>
+            </div>
+        "##, total_requests, success_rate, error_count, avg_duration, min_duration, max_duration, total_request_bytes, total_response_bytes));
+    } else {
+        html.push_str(r##"
+            <div class="metrics-summary">
+                <h3>Statistics Summary</h3>
+                <p>No metrics data available</p>
+            </div>
+        "##);
+    }
+
+    // Get recent requests
+    let rows = sqlx::query(
+        "SELECT id, path, method, request_timestamp, duration_ms, response_status_code,
+                request_size_bytes, response_size_bytes, upstream_url, auth_type, error_message
+         FROM request_metrics
+         ORDER BY request_timestamp DESC
+         LIMIT 20"
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    html.push_str(r##"
+        <div class="recent-requests">
+            <h3>Recent Requests (Last 20)</h3>
+    "##);
+
+    if !rows.is_empty() {
+        html.push_str(r##"
+            <table class="metrics-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Path</th>
+                        <th>Method</th>
+                        <th>Timestamp</th>
+                        <th>Duration</th>
+                        <th>Status</th>
+                        <th>Req Size</th>
+                        <th>Resp Size</th>
+                        <th>Auth Type</th>
+                    </tr>
+                </thead>
+                <tbody>
+        "##);
+
+        for row in rows {
+            let id: String = row.get("id");
+            let short_id = &id[..8]; // Show first 8 characters of UUID
+            let path: String = row.get("path");
+            let method: String = row.get("method");
+            let timestamp: String = row.get("request_timestamp");
+            let duration = row.get::<Option<i64>, _>("duration_ms")
+                .map(|d| format!("{}ms", d))
+                .unwrap_or_else(|| "N/A".to_string());
+            let status = row.get::<Option<u16>, _>("response_status_code")
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "N/A".to_string());
+            let req_size: i64 = row.get("request_size_bytes");
+            let resp_size = row.get::<Option<i64>, _>("response_size_bytes")
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "N/A".to_string());
+            let auth_type: String = row.get("auth_type");
+
+            html.push_str(&format!(r##"
+                <tr>
+                    <td>{}</td>
+                    <td>{}</td>
+                    <td>{}</td>
+                    <td>{}</td>
+                    <td>{}</td>
+                    <td>{}</td>
+                    <td>{}</td>
+                    <td>{}</td>
+                    <td>{}</td>
+                </tr>
+            "##, short_id, path, method, &timestamp[..19], duration, status, req_size, resp_size, auth_type));
+
+            // Show error message if present
+            if let Some(error) = row.get::<Option<String>, _>("error_message") {
+                html.push_str(&format!(r##"
+                <tr class="error-row">
+                    <td colspan="9">Error: {}</td>
+                </tr>
+                "##, error));
+            }
+        }
+
+        html.push_str("</tbody></table>");
+    } else {
+        html.push_str("<p>No recent requests available</p>");
+    }
+
+    html.push_str("</div></div>");
+    Html(html)
 }
 
 pub async fn add_route_form() -> Html<String> {

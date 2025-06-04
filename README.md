@@ -4,21 +4,21 @@
 
 ---
 
-The Black Gate Project, or Black Gate for short, is an open source project API Gateway.
+The Black Gate Project, or Black Gate for short, is an open source API Gateway.
 
-The goal is simple: A rust server that handles common API tasks such as managing routes, upstreams, authentication, authorization, metrics, logging, and documentation.
+The goal is simple: A rust server that handles common API tasks such as managing routes, upstreams, authentication, authorization, metrics, logging, and documentation, controlled through a CLI or Web User Interface.
 
-Current Progress: 5%
+Current Progress: 7%
 
 Status:
-- Black Gate can accept a new route record, which includes an upstream and path, along with optional values for authentication and HTTP method.
-- Black Gate adds this route record to the database.
-- When the HTTP server is run and we send a request to that path, a request for the upstream URI is built using any authentication stored in the record.
-- The HTTP request is executed and the response is returned to the client.
+- Controls include a CLI, and when the server is running, an HTMX dashboard that provides the same basic functionality as the CLI.
+- Accepts a new route record, which includes an upstream and path, along with optional values for authentication and the HTTP method.
+- Adds this route record to the database.
+- When the server is running, requests for the added paths trigger requests for the upstream URI, created with any authentication provided.
+- The request is executed and the response is returned to the client.
 - The request and response metrics are logged.
-- Black Gate can list the route records in the DB.
-- Black Gate can remove routes from the DB.
-- This is all controlled via a CLI
+- Can list the route records in the DB.
+- Can remove routes from the DB.
 - Dockerfile included for containerization to self-host
 
 Authentication Schemes Supported:
@@ -30,6 +30,7 @@ Features:
 - Authentication
 - Store paths and their upstreams in a database
 - Add, remove, and list routes via the CLI
+- Add, remove, and list routes via the Web UI
 - Test Coverage
 - oAuth test server for testing oAuth Client Credential flows
 - HTTP Method Validation per-path
@@ -64,7 +65,7 @@ $ curl -X POST http://localhost:3000/warehouse -d '{"payload": "test"}' -H "Cont
 Next Steps:
 - More Authentication schemes
 - Enhanced rate limiting features (IP-based limiting, custom time windows)
-- A web based user interface with HTMX for speed and simplicity
+- Enhanced web UI
 
 ## Metrics and Monitoring
 

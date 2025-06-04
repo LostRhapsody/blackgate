@@ -68,19 +68,19 @@ pub async fn add_route_form() -> Html<String> {
     let html = r##"
         <h3>Add New Route</h3>
         <form hx-post="/web/routes/add" hx-target="#routes-content" hx-swap="outerHTML">
-            <div style="margin-bottom: 10px;">
+            <div>
                 <label for="path">Path:</label><br>
-                <input type="text" id="path" name="path" required style="width: 300px;" placeholder="/api/example">
+                <input type="text" id="path" name="path" required placeholder="/api/example">
             </div>
             
-            <div style="margin-bottom: 10px;">
+            <div>
                 <label for="upstream">Upstream URL:</label><br>
-                <input type="url" id="upstream" name="upstream" required style="width: 300px;" placeholder="https://api.example.com">
+                <input type="url" id="upstream" name="upstream" required placeholder="https://api.example.com">
             </div>
 
-            <div style="margin-bottom: 10px;">
+            <div>
                 <label for="auth_type">Authentication Type:</label><br>
-                <select id="auth_type" name="auth_type" style="width: 300px;" hx-trigger="change" hx-target="#auth-fields" hx-get="/web/routes/auth-fields">
+                <select id="auth_type" name="auth_type" hx-trigger="change" hx-target="#auth-fields" hx-get="/web/routes/auth-fields" hx-swap="innerHTML">
                     <option value="none">None</option>
                     <option value="api-key">API Key</option>
                     <option value="oauth2">OAuth 2.0</option>
@@ -93,22 +93,22 @@ pub async fn add_route_form() -> Html<String> {
                 <!-- Auth-specific fields will be loaded here dynamically -->
             </div>
 
-            <div style="margin-bottom: 10px;">
+            <div>
                 <label for="allowed_methods">Allowed Methods (comma-separated, leave blank for all):</label><br>
-                <input type="text" id="allowed_methods" name="allowed_methods" style="width: 300px;" placeholder="GET,POST,PUT">
+                <input type="text" id="allowed_methods" name="allowed_methods" placeholder="GET,POST,PUT">
             </div>
 
-            <div style="margin-bottom: 10px;">
+            <div>
                 <label for="rate_limit_per_minute">Rate Limit Per Minute:</label><br>
-                <input type="number" id="rate_limit_per_minute" name="rate_limit_per_minute" value="60" style="width: 300px;">
+                <input type="number" id="rate_limit_per_minute" name="rate_limit_per_minute" value="60">
             </div>
 
-            <div style="margin-bottom: 10px;">
+            <div>
                 <label for="rate_limit_per_hour">Rate Limit Per Hour:</label><br>
-                <input type="number" id="rate_limit_per_hour" name="rate_limit_per_hour" value="1000" style="width: 300px;">
+                <input type="number" id="rate_limit_per_hour" name="rate_limit_per_hour" value="1000">
             </div>
 
-            <div style="margin-bottom: 10px;">
+            <div>
                 <button type="submit">Add Route</button>
                 <button type="button" hx-get="/web/routes" hx-target="#content" hx-swap="innerHTML">Cancel</button>
             </div>
@@ -122,63 +122,63 @@ pub async fn auth_fields_form(Query(params): Query<std::collections::HashMap<Str
     let auth_type = params.get("auth_type").unwrap_or(&default_auth_type);
     let html = match auth_type.as_str() {
         "api-key" => r##"
-            <div style="margin-bottom: 10px;">
+            <div>
                 <label for="auth_value">API Key (with Bearer prefix if needed):</label><br>
-                <input type="text" id="auth_value" name="auth_value" style="width: 300px;" placeholder="Bearer your-api-key">
+                <input type="text" id="auth_value" name="auth_value" placeholder="Bearer your-api-key">
             </div>
         "##,
         "oauth2" => r##"
-            <div style="margin-bottom: 10px;">
+            <div>
                 <label for="oauth_token_url">OAuth Token URL:</label><br>
-                <input type="url" id="oauth_token_url" name="oauth_token_url" style="width: 300px;" placeholder="https://oauth.example.com/token">
+                <input type="url" id="oauth_token_url" name="oauth_token_url" placeholder="https://oauth.example.com/token">
             </div>
-            <div style="margin-bottom: 10px;">
+            <div>
                 <label for="oauth_client_id">OAuth Client ID:</label><br>
-                <input type="text" id="oauth_client_id" name="oauth_client_id" style="width: 300px;">
+                <input type="text" id="oauth_client_id" name="oauth_client_id">
             </div>
-            <div style="margin-bottom: 10px;">
+            <div>
                 <label for="oauth_client_secret">OAuth Client Secret:</label><br>
-                <input type="password" id="oauth_client_secret" name="oauth_client_secret" style="width: 300px;">
+                <input type="password" id="oauth_client_secret" name="oauth_client_secret">
             </div>
-            <div style="margin-bottom: 10px;">
+            <div>
                 <label for="oauth_scope">OAuth Scope:</label><br>
-                <input type="text" id="oauth_scope" name="oauth_scope" style="width: 300px;" placeholder="read:all">
+                <input type="text" id="oauth_scope" name="oauth_scope" placeholder="read:all">
             </div>
         "##,
         "jwt" => r##"
-            <div style="margin-bottom: 10px;">
+            <div>
                 <label for="jwt_secret">JWT Secret:</label><br>
-                <input type="password" id="jwt_secret" name="jwt_secret" style="width: 300px;">
+                <input type="password" id="jwt_secret" name="jwt_secret">
             </div>
-            <div style="margin-bottom: 10px;">
+            <div>
                 <label for="jwt_algorithm">JWT Algorithm:</label><br>
-                <select id="jwt_algorithm" name="jwt_algorithm" style="width: 300px;">
+                <select id="jwt_algorithm" name="jwt_algorithm">
                     <option value="HS256">HS256</option>
                     <option value="HS384">HS384</option>
                     <option value="HS512">HS512</option>
                 </select>
             </div>
-            <div style="margin-bottom: 10px;">
+            <div>
                 <label for="jwt_issuer">JWT Issuer (optional):</label><br>
-                <input type="text" id="jwt_issuer" name="jwt_issuer" style="width: 300px;">
+                <input type="text" id="jwt_issuer" name="jwt_issuer">
             </div>
-            <div style="margin-bottom: 10px;">
+            <div>
                 <label for="jwt_audience">JWT Audience (optional):</label><br>
-                <input type="text" id="jwt_audience" name="jwt_audience" style="width: 300px;">
+                <input type="text" id="jwt_audience" name="jwt_audience">
             </div>
-            <div style="margin-bottom: 10px;">
+            <div>
                 <label for="jwt_required_claims">JWT Required Claims (comma-separated, optional):</label><br>
-                <input type="text" id="jwt_required_claims" name="jwt_required_claims" style="width: 300px;" placeholder="role,permissions">
+                <input type="text" id="jwt_required_claims" name="jwt_required_claims" placeholder="role,permissions">
             </div>
-            <div style="margin-bottom: 10px;">
+            <div>
                 <label for="auth_value">JWT Token for testing (optional):</label><br>
-                <input type="text" id="auth_value" name="auth_value" style="width: 300px;" placeholder="Bearer your-jwt-token">
+                <input type="text" id="auth_value" name="auth_value" placeholder="Bearer your-jwt-token">
             </div>
         "##,
         "oidc" => r##"
-            <div style="margin-bottom: 10px;">
+            <div>
                 <label for="auth_value">OIDC Configuration (placeholder - not fully implemented):</label><br>
-                <input type="text" id="auth_value" name="auth_value" style="width: 300px;">
+                <input type="text" id="auth_value" name="auth_value">
             </div>
         "##,
         _ => "",

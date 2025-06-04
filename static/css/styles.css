@@ -1,0 +1,11 @@
+form {
+    div {
+        margin-bottom: 10px;
+    }
+    input {
+        min-width: 300px;
+    }
+    select {
+        width: 300px;
+    }
+}

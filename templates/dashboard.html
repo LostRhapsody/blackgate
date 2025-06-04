@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Black Gate Dashboard</title>
+    <script src="/static/js/htmx.min.js"></script>
+    <!-- <link rel="stylesheet" href="/static/styles.css"> -->
+</head>
+<body>
+    <nav>
+        <h1>Black Gate API Gateway</h1>
+        <ul>
+            <li><a href="/templates/dashboard.html">Dashboard</a></li>
+            <li><a href="#" hx-get="/web/routes" hx-target="#content">Routes</a></li>
+            <li><a href="#" hx-get="/web/metrics" hx-target="#content">Metrics</a></li>
+        </ul>
+    </nav>
+    <main id="content">
+        <h2>Welcome to Black Gate</h2>
+        <p>Use the navigation above to manage routes and view metrics.</p>
+    </main>
+</body>
+</html>

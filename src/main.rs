@@ -1,5 +1,6 @@
 use axum::{Router, extract::OriginalUri, http::Method, routing::{get, post, put, delete, patch, head}};
 
+mod web;
 mod oauth_test_server;
 #[cfg(test)]
 mod tests;
@@ -13,6 +14,7 @@ use tracing::{info, warn, error, debug};
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 use jsonwebtoken::{decode, Algorithm, Validation, DecodingKey};
+use tower_http::trace::TraceLayer;
 
 /// Structure to store OAuth tokens with expiration
 struct OAuthTokenCache {
@@ -336,11 +338,6 @@ impl AuthType {
             AuthType::Oidc => "OIDC".to_string(),
         }
     }
-}
-
-/// Root handler for the API gateway
-async fn root() -> &'static str {
-    "Welcome to Black Gate"
 }
 
 /// Store request metrics in the database
@@ -699,7 +696,7 @@ async fn start_server(pool: SqlitePool) {
         rate_limiter,
     };
     let app = Router::new()
-        .route("/", get(root))
+        .merge(web::create_web_router())
         // HTTP method specific routes
         .route("/{*path}", get(handle_get_request))
         .route("/{*path}", head(handle_head_request))
@@ -707,11 +704,13 @@ async fn start_server(pool: SqlitePool) {
         .route("/{*path}", post(handle_post_request))
         .route("/{*path}", put(handle_put_request))
         .route("/{*path}", patch(handle_patch_request))
-        .with_state(app_state);
+        .with_state(app_state)
+        .layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     let addr = listener.local_addr().unwrap();
     info!("Black Gate running on http://{}", addr);
+    info!("Web interface: http://localhost:3000/dashboard");
     axum::serve(listener, app).await.unwrap();
 }
 
@@ -728,7 +727,7 @@ async fn start_server_with_shutdown(
         rate_limiter,
     };
     let app = Router::new()
-        .route("/", get(root))
+        .merge(web::create_web_router())
         // HTTP method specific routes
         .route("/{*path}", get(handle_get_request))
         .route("/{*path}", head(handle_head_request))
@@ -736,7 +735,8 @@ async fn start_server_with_shutdown(
         .route("/{*path}", post(handle_post_request))
         .route("/{*path}", put(handle_put_request))
         .route("/{*path}", patch(handle_patch_request))
-        .with_state(app_state);
+        .with_state(app_state)
+        .layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     let addr = listener.local_addr().unwrap();

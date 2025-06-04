@@ -11,12 +11,12 @@ form {
     }
 }
 
-/* Metrics styles */
-.metrics-container {
+/* Dashboard styles */
+.dashboard-container {
     margin: 20px 0;
 }
 
-.metrics-summary {
+.dashboard-summary {
     margin-bottom: 30px;
 }
 
@@ -39,11 +39,11 @@ form {
     }
 }
 
-.recent-requests {
+.dashboard-section {
     margin-top: 30px;
 }
 
-.metrics-table {
+.data-table {
     width: 100%;
     border-collapse: collapse;
     margin-top: 15px;

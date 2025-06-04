@@ -32,30 +32,53 @@ pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
 
     let mut html = String::from(r##"
         <h2>Routes</h2>
-        <button hx-get="/web/routes/add-form" hx-target="#routes-content">Add Route</button>
-        <div id="routes-content">
-        <table>
-            <thead>
-                <tr><th>Path</th><th>Upstream</th><th>Auth</th><th>Rate/Min</th><th>Rate/Hour</th><th>Actions</th></tr>
-            </thead>
-            <tbody>
+        <div class="dashboard-container">
+            <button hx-get="/web/routes/add-form" hx-target="#routes-content">Add Route</button>
+            <div id="routes-content" class="dashboard-section">
+                <h3>Configured Routes</h3>
     "##);
 
-    for row in rows {
-        let path: String = row.get("path");
-        let upstream: String = row.get("upstream");
-        let auth_type: String = row.get("auth_type");
-        let rate_min: i64 = row.get("rate_limit_per_minute");
-        let rate_hour: i64 = row.get("rate_limit_per_hour");
+    if !rows.is_empty() {
+        html.push_str(r##"
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Path</th>
+                            <th>Upstream</th>
+                            <th>Auth</th>
+                            <th>Rate/Min</th>
+                            <th>Rate/Hour</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        "##);
 
-        html.push_str(&format!(r##"            <tr>
-                <td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td>
-                <td><button hx-delete="/web/routes/{}" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Delete this route?">Delete</button></td>
-            </tr>
-        "##, path, upstream, auth_type, rate_min, rate_hour, path));
+        for row in rows {
+            let path: String = row.get("path");
+            let upstream: String = row.get("upstream");
+            let auth_type: String = row.get("auth_type");
+            let rate_min: i64 = row.get("rate_limit_per_minute");
+            let rate_hour: i64 = row.get("rate_limit_per_hour");
+
+            html.push_str(&format!(r##"
+                        <tr>
+                            <td>{}</td>
+                            <td>{}</td>
+                            <td>{}</td>
+                            <td>{}</td>
+                            <td>{}</td>
+                            <td><button hx-delete="/web/routes/{}" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Delete this route?">Delete</button></td>
+                        </tr>
+            "##, path, upstream, auth_type, rate_min, rate_hour, path));
+        }
+
+        html.push_str("</tbody></table>");
+    } else {
+        html.push_str("<p>No routes configured</p>");
     }
 
-    html.push_str("</tbody></table></div>");
+    html.push_str("</div></div>");
     Html(html)
 }
 
@@ -76,11 +99,9 @@ pub async fn metrics_view(State(state): State<AppState>) -> Html<String> {
     )
     .fetch_optional(&state.db)
     .await
-    .unwrap_or_default();
-
-    let mut html = String::from(r##"
+    .unwrap_or_default();    let mut html = String::from(r##"
         <h2>Metrics Dashboard</h2>
-        <div class="metrics-container">
+        <div class="dashboard-container">
     "##);
 
     // Add statistics summary
@@ -101,7 +122,7 @@ pub async fn metrics_view(State(state): State<AppState>) -> Html<String> {
         };
 
         html.push_str(&format!(r##"
-            <div class="metrics-summary">
+            <div class="dashboard-summary">
                 <h3>Statistics Summary</h3>
                 <div class="stats-grid">
                     <div class="stat-item">
@@ -141,7 +162,7 @@ pub async fn metrics_view(State(state): State<AppState>) -> Html<String> {
         "##, total_requests, success_rate, error_count, avg_duration, min_duration, max_duration, total_request_bytes, total_response_bytes));
     } else {
         html.push_str(r##"
-            <div class="metrics-summary">
+            <div class="dashboard-summary">
                 <h3>Statistics Summary</h3>
                 <p>No metrics data available</p>
             </div>
@@ -161,13 +182,13 @@ pub async fn metrics_view(State(state): State<AppState>) -> Html<String> {
     .unwrap_or_default();
 
     html.push_str(r##"
-        <div class="recent-requests">
+        <div class="dashboard-section">
             <h3>Recent Requests (Last 20)</h3>
     "##);
 
     if !rows.is_empty() {
         html.push_str(r##"
-            <table class="metrics-table">
+            <table class="data-table">
                 <thead>
                     <tr>
                         <th>ID</th>

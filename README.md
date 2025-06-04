@@ -4,39 +4,32 @@
 
 ---
 
-The Black Gate Project, or Black Gate for short, is an open source project API Gateway.
+The Black Gate Project, or Black Gate for short, is an open source API Gateway.
 
-The goal is simple: A rust server that handles common API tasks such as managing routes, upstreams, authentication, authorization, metrics, logging, and documentation.
+The goal is simple: A rust server that handles common API tasks such as managing routes, upstreams, authentication, authorization, metrics, logging, and documentation, controlled through a CLI or Web User Interface.
 
-Current Progress: 5%
+Current Progress: 7%
 
-Status:
-- Black Gate can accept a new route record, which includes an upstream and path, along with optional values for authentication and HTTP method.
-- Black Gate adds this route record to the database.
-- When the HTTP server is run and we send a request to that path, a request for the upstream URI is built using any authentication stored in the record.
-- The HTTP request is executed and the response is returned to the client.
-- The request and response metrics are logged.
-- Black Gate can list the route records in the DB.
-- Black Gate can remove routes from the DB.
-- This is all controlled via a CLI
-- Dockerfile included for containerization to self-host
-
-Authentication Schemes Supported:
-- oAuth2.0 Client Credentials
-- API Keys
-- JWT
-
-Features:
+## Features
 - Authentication
 - Store paths and their upstreams in a database
 - Add, remove, and list routes via the CLI
+- Add, remove, and list routes via the Web UI
 - Test Coverage
 - oAuth test server for testing oAuth Client Credential flows
 - HTTP Method Validation per-path
 - Detailed metrics for each request
 - Rate Limiting - Configurable per-minute and per-hour rate limits for each route
+- Dockerfile included for containerization to self-host
 
-Example (Using httpbin.org):
+**Sections with detailed information on features below**
+
+### Authentication Schemes Supported
+- oAuth2.0 Client Credentials
+- API Keys
+- JWT
+
+## Example (Using httpbin.org)
 ```bash
 $ cargo run -- add-route --path /warehouse --upstream https://httpbin.org/post --auth-type api-key --auth-value "Bearer warehouse_key" --rate-limit-per-minute 30 --rate-limit-per-hour 500
 $ cargo run -- start
@@ -61,10 +54,28 @@ $ curl -X POST http://localhost:3000/warehouse -d '{"payload": "test"}' -H "Cont
 }
 ```
 
-Next Steps:
-- More Authentication schemes
+---
+
+## Next Steps
+- User/Password Authentication
+- Tenant based Authorization (Restrict routes and actions based on the client we recceive the request from)
 - Enhanced rate limiting features (IP-based limiting, custom time windows)
-- A web based user interface with HTMX for speed and simplicity
+- Enhanced web UI
+- API Composition - aggregate data from multiple services into a single response, simplifying client-side logic
+- Protocol translation - bridge the gap between HTTP, WebSocket, gRPC, etc, simplifying client-side logic
+- Data transloation - convert requests and responses to and from JSON and XML (and other common syntaxes for data representation)
+- Data transformation and orchestration - modify request/response data and manage complex workflows
+- OpenAPI Specification Support - Automatically add all the routes from an OpenAPI spec to your Gateway
+- Code Stub Generation - Generate code based on OpenAPI Specs or your Gateway's routes
+- OpenAPI Specification Generation - Generate barebones OpenAPI Sepcs based on your routes
+- API Health checks - confirm the status and uptime of an API and display it
+- Automatic API route backups - provide 'backup' routes for specific routes if that route's API is not available
+- Secure Credential Management - Currently, credentials are added per-route, but could be stored outside the route schema and managed independantly
+- Documentation support - include API documentation (or at the least, links to it) in the Gateway
+- Collections - combine related routes into a single API collection to keep routes organized
+- Payment Gateway support - Make it easy to set up PayPal, Stripe, and Braintree in your Gateway, switch between them during outages, and provide intuitive check-out form solutions
+
+---
 
 ## Metrics and Monitoring
 
@@ -217,11 +228,9 @@ curl http://localhost:3000/test  # 429 Too Many Requests
 }
 ```
 
-Long Term Goals:
-- Black Gate will be self-hosted or hosted by "Black Gate" in the cloud for a subscription fee.
-- Payment Processing Gateway centric features, with the goal of providing flexible payment provider support to B2B and retail websites.
+## Tests
+Additional tests 
 
-Tests:
 test POST request
 ```bash
 curl -X POST http://localhost:3000/post-test -d '{"payload": "test"}' -H "Content-Type: application/json"

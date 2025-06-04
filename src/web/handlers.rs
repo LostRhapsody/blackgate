@@ -4,6 +4,11 @@ use sqlx::Row;
 use crate::{AppState, AuthType};
 
 #[derive(Deserialize)]
+pub struct MetricsQuery {
+    limit: Option<u32>,
+}
+
+#[derive(Deserialize)]
 pub struct AddRouteForm {
     path: String,
     upstream: String,
@@ -82,7 +87,9 @@ pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
     Html(html)
 }
 
-pub async fn metrics_view(State(state): State<AppState>) -> Html<String> {
+pub async fn metrics_view(State(state): State<AppState>, Query(query): Query<MetricsQuery>) -> Html<String> {
+    let limit = query.limit.unwrap_or(20);
+    
     // Get metrics statistics
     let stats_query = sqlx::query(
         "SELECT
@@ -167,24 +174,44 @@ pub async fn metrics_view(State(state): State<AppState>) -> Html<String> {
                 <p>No metrics data available</p>
             </div>
         "##);
-    }
-
-    // Get recent requests
+    }    // Get recent requests
     let rows = sqlx::query(
         "SELECT id, path, method, request_timestamp, duration_ms, response_status_code,
                 request_size_bytes, response_size_bytes, upstream_url, auth_type, error_message
          FROM request_metrics
          ORDER BY request_timestamp DESC
-         LIMIT 20"
+         LIMIT ?"
     )
+    .bind(limit as i64)
     .fetch_all(&state.db)
     .await
     .unwrap_or_default();
 
-    html.push_str(r##"
+    html.push_str(&format!(r##"
         <div class="dashboard-section">
-            <h3>Recent Requests (Last 20)</h3>
-    "##);
+            <div class="dashboard-header">
+                <h3>Recent Requests (Last {})</h3>
+                <div>
+                    <label for="log-limit">Show:</label>
+                    <select id="log-limit" name="limit" hx-get="/web/metrics" hx-target="#content" hx-swap="innerHTML" hx-include="this">
+                        <option value="10"{}>10 logs</option>
+                        <option value="20"{}>20 logs</option>
+                        <option value="50"{}>50 logs</option>
+                        <option value="100"{}>100 logs</option>
+                        <option value="200"{}>200 logs</option>
+                    </select>
+                    <button hx-get="/web/metrics?limit={}" hx-target="#content" hx-swap="innerHTML" style="margin-left: 10px;">Refresh</button>
+                </div>
+            </div>
+    "##, 
+        limit,
+        if limit == 10 { " selected" } else { "" },
+        if limit == 20 { " selected" } else { "" },
+        if limit == 50 { " selected" } else { "" },
+        if limit == 100 { " selected" } else { "" },
+        if limit == 200 { " selected" } else { "" },
+        limit
+    ));
 
     if !rows.is_empty() {
         html.push_str(r##"

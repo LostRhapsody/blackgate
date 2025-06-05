@@ -48,6 +48,8 @@
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
+use sqlx::SqlitePool;
+use tracing::{debug, error};
 use crate::auth::types::AuthType;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -114,6 +116,43 @@ impl RequestMetrics {
         self.response_timestamp = Some(now);
         self.duration_ms = Some((now - self.request_timestamp).num_milliseconds());
         self.error_message = Some(error);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//****                       Public Functions                            ****//
+///////////////////////////////////////////////////////////////////////////////
+
+/// Store request metrics in the database
+pub async fn store_metrics(pool: &SqlitePool, metrics: &RequestMetrics) {
+    let result = sqlx::query(
+        "INSERT INTO request_metrics (
+            id, path, method, request_timestamp, response_timestamp, duration_ms,
+            request_size_bytes, response_size_bytes, response_status_code,
+            upstream_url, auth_type, client_ip, user_agent, error_message
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&metrics.id)
+    .bind(&metrics.path)
+    .bind(&metrics.method)
+    .bind(metrics.request_timestamp.to_rfc3339())
+    .bind(metrics.response_timestamp.map(|t| t.to_rfc3339()))
+    .bind(metrics.duration_ms)
+    .bind(metrics.request_size_bytes)
+    .bind(metrics.response_size_bytes)
+    .bind(metrics.response_status_code)
+    .bind(&metrics.upstream_url)
+    .bind(&metrics.auth_type)
+    .bind(&metrics.client_ip)
+    .bind(&metrics.user_agent)
+    .bind(&metrics.error_message)
+    .execute(pool)
+    .await;
+
+    if let Err(e) = result {
+        error!("Failed to store metrics: {}", e);
+    } else {
+        debug!("Stored metrics for request {}", metrics.id);
     }
 }
 

@@ -4,9 +4,6 @@ use predicates::str::contains;
 use reqwest::Client;
 use tokio::runtime::Runtime;
 
-// Include JWT tests
-mod jwt_tests;
-
 #[test]
 fn add_route_required_params() {
     let mut cmd = Command::cargo_bin("blackgate").unwrap();

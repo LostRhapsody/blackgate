@@ -14,13 +14,16 @@ use tokio::time::{Duration, Instant};
 use tracing::{info, warn, error, debug};
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
-use jsonwebtoken::{decode, Algorithm, Validation, DecodingKey};
 use tower_http::trace::TraceLayer;
 
 use auth::{
     oauth::{
         OAuthTokenCache,
         get_oauth_token,
+    },
+    jwt::{
+        validate_jwt_token,
+        create_jwt_config,
     },
     types::AuthType,
 };
@@ -227,29 +230,6 @@ impl RequestMetrics {
         self.duration_ms = Some((now - self.request_timestamp).num_milliseconds());
         self.error_message = Some(error);
     }
-}
-
-/// JWT Claims structure for token validation
-#[derive(Debug, Serialize, Deserialize)]
-struct JwtClaims {
-    sub: String,         // Subject (user identifier)
-    exp: usize,          // Expiration time (as UTC timestamp)
-    iat: usize,          // Issued at (as UTC timestamp)
-    iss: Option<String>, // Issuer
-    aud: Option<String>, // Audience
-    // Custom claims can be added here
-    #[serde(flatten)]
-    custom: HashMap<String, serde_json::Value>,
-}
-
-/// JWT Configuration structure
-#[derive(Debug, Clone)]
-struct JwtConfig {
-    secret: String,
-    algorithm: Algorithm,
-    issuer: Option<String>,
-    audience: Option<String>,
-    required_claims: Vec<String>,
 }
 
 /// OIDC Configuration structure
@@ -758,76 +738,6 @@ async fn start_oauth_test_server(pool: SqlitePool, _port: u16) {
             error!("Failed to listen for shutdown signal: {}", err);
         }
     }
-}
-
-/// Validate JWT token and extract claims
-fn validate_jwt_token(
-    token: &str,
-    jwt_config: &JwtConfig,
-) -> Result<JwtClaims, Box<dyn std::error::Error + Send + Sync>> {
-    // Parse algorithm
-    let algorithm = match jwt_config.algorithm {
-        Algorithm::HS256 | Algorithm::HS384 | Algorithm::HS512 => jwt_config.algorithm,
-        _ => {
-            return Err("Unsupported JWT algorithm. Only HMAC algorithms (HS256, HS384, HS512) are currently supported.".into());
-        }
-    };
-
-    // Create validation
-    let mut validation = Validation::new(algorithm);
-
-    // Set issuer validation if provided
-    if let Some(ref issuer) = jwt_config.issuer {
-        validation.iss = Some(std::collections::HashSet::from([issuer.clone()]));
-    }
-
-    // Set audience validation if provided
-    if let Some(ref audience) = jwt_config.audience {
-        validation.aud = Some(std::collections::HashSet::from([audience.clone()]));
-    }
-
-    // Create decoding key
-    let decoding_key = DecodingKey::from_secret(jwt_config.secret.as_ref());
-
-    // Decode and validate token
-    let token_data = decode::<JwtClaims>(token, &decoding_key, &validation)?;
-    let claims = token_data.claims;
-
-    // Validate required claims if specified
-    for required_claim in &jwt_config.required_claims {
-        if !claims.custom.contains_key(required_claim) {
-            return Err(format!("Missing required claim: {}", required_claim).into());
-        }
-    }
-
-    debug!("JWT token validated successfully for subject: {}", claims.sub);
-    Ok(claims)
-}
-
-/// Create JWT configuration from route config
-fn create_jwt_config(route_config: &RouteConfig) -> Result<JwtConfig, String> {
-    let secret = route_config.jwt_secret.as_ref()
-        .ok_or("JWT secret is required")?;
-
-    let algorithm = match route_config.jwt_algorithm.as_deref().unwrap_or("HS256") {
-        "HS256" => Algorithm::HS256,
-        "HS384" => Algorithm::HS384,
-        "HS512" => Algorithm::HS512,
-        alg => return Err(format!("Unsupported JWT algorithm: {}", alg)),
-    };
-
-    let required_claims = route_config.jwt_required_claims
-        .as_ref()
-        .map(|claims| claims.split(',').map(|s| s.trim().to_string()).collect())
-        .unwrap_or_default();
-
-    Ok(JwtConfig {
-        secret: secret.clone(),
-        algorithm,
-        issuer: route_config.jwt_issuer.clone(),
-        audience: route_config.jwt_audience.clone(),
-        required_claims,
-    })
 }
 
 /// Create OIDC configuration from route config

@@ -1,3 +1,16 @@
+//! module structure:
+//! auth
+//! routing
+//! metrics
+//! rate_limiter
+//! cli
+//! server
+//! database
+//! web
+//! oauth_test_server
+//! tests
+//! main.rs
+
 use axum::{Router, extract::OriginalUri, http::Method, routing::{get, post, put, delete, patch, head}};
 
 mod web;

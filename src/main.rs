@@ -16,14 +16,14 @@ use axum::{Router, extract::OriginalUri, http::Method, routing::{get, post, put,
 mod web;
 mod auth;
 mod oauth_test_server;
+mod rate_limiter;
 #[cfg(test)]
 mod tests;
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, sqlite::SqlitePool};
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tokio::time::{Duration, Instant};
+use tokio::time::Instant;
 use tracing::{info, warn, error, debug};
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
@@ -35,50 +35,10 @@ use auth::{
     types::AuthType,
 };
 
-/// Rate limiting structure to track requests per client/route
-struct RateLimiter {
-    requests: HashMap<String, Vec<Instant>>, // key -> timestamps of requests
-}
-
-impl RateLimiter {
-    fn new() -> Self {
-        Self {
-            requests: HashMap::new(),
-        }
-    }
-
-    /// Check if request is allowed based on rate limits
-    /// Returns true if allowed, false if rate limited
-    fn is_allowed(&mut self, key: &str, requests_per_minute: u32, requests_per_hour: u32) -> bool {
-        let now = Instant::now();
-
-        // Clean up old entries and get current requests for this key
-        let requests = self.requests.entry(key.to_string()).or_insert_with(Vec::new);
-
-        // Remove requests older than 1 hour
-        requests.retain(|&timestamp| now.duration_since(timestamp) < Duration::from_secs(3600));
-
-        // Check hourly limit
-        if requests.len() >= requests_per_hour as usize {
-            debug!("Rate limit exceeded for key: {} (hourly limit: {})", key, requests_per_hour);
-            return false;
-        }
-
-        // Check minute limit - count requests in the last minute
-        let minute_requests = requests.iter()
-            .filter(|&&timestamp| now.duration_since(timestamp) < Duration::from_secs(60))
-            .count();
-
-        if minute_requests >= requests_per_minute as usize {
-            debug!("Rate limit exceeded for key: {} (minute limit: {})", key, requests_per_minute);
-            return false;
-        }
-
-        // Add this request
-        requests.push(now);
-        true
-    }
-}
+use rate_limiter::{
+    RateLimiter,
+    check_rate_limit,
+};
 
 #[derive(Parser)]
 #[command(name = "blackgate")]
@@ -694,54 +654,6 @@ async fn start_oauth_test_server(pool: SqlitePool, _port: u16) {
             error!("Failed to listen for shutdown signal: {}", err);
         }
     }
-}
-
-/// Check rate limits for a request
-/// Returns Ok(()) if allowed, Err(response) if rate limited
-async fn check_rate_limit(
-    path: &str,
-    rate_limit_per_minute: i64,
-    rate_limit_per_hour: i64,
-    rate_limiter: Arc<Mutex<RateLimiter>>,
-    metrics: &mut RequestMetrics,
-) -> Result<(), axum::response::Response> {
-    // Use path as the rate limiting key
-    // In production, you might want to use client IP or user ID instead
-    let rate_limit_key = format!("path:{}", path);
-
-    // Check rate limits
-    let rate_limit_exceeded = {
-        let mut rate_limiter = rate_limiter.lock().unwrap();
-        !rate_limiter.is_allowed(&rate_limit_key, rate_limit_per_minute as u32, rate_limit_per_hour as u32)
-    };
-
-    if rate_limit_exceeded {
-        warn!(
-            request_id = %metrics.id,
-            path = %path,
-            rate_limit_per_minute = rate_limit_per_minute,
-            rate_limit_per_hour = rate_limit_per_hour,
-            "Rate limit exceeded"
-        );
-
-        metrics.set_error("Rate limit exceeded".to_string());
-
-        return Err(axum::response::Response::builder()
-            .status(429)
-            .header("Retry-After", "60") // Tell client to retry after 60 seconds
-            .body(axum::body::Body::from("Too Many Requests"))
-            .unwrap());
-    }
-
-    debug!(
-        request_id = %metrics.id,
-        path = %path,
-        rate_limit_per_minute = rate_limit_per_minute,
-        rate_limit_per_hour = rate_limit_per_hour,
-        "Rate limit check passed"
-    );
-
-    Ok(())
 }
 
 #[tokio::main]

@@ -8,7 +8,7 @@ The Black Gate Project, or Black Gate for short, is an open source API Gateway.
 
 The goal is simple: A rust server that handles common API tasks such as managing routes, upstreams, authentication, authorization, metrics, logging, and documentation, controlled through a CLI or Web User Interface.
 
-Current Progress: 7%
+Current Progress: 10%
 
 ## Features
 - Authentication
@@ -18,7 +18,7 @@ Current Progress: 7%
 - Test Coverage
 - oAuth test server for testing oAuth Client Credential flows
 - HTTP Method Validation per-path
-- Detailed metrics for each request
+- Detailed metrics for each request via the CLI and Web
 - Rate Limiting - Configurable per-minute and per-hour rate limits for each route
 - Dockerfile included for containerization to self-host
 

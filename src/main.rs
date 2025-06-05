@@ -17,37 +17,13 @@ use uuid::Uuid;
 use jsonwebtoken::{decode, Algorithm, Validation, DecodingKey};
 use tower_http::trace::TraceLayer;
 
-use auth::types::AuthType;
-
-/// Structure to store OAuth tokens with expiration
-struct OAuthTokenCache {
-    tokens: HashMap<String, (String, Instant)>,
-}
-
-impl OAuthTokenCache {
-    /// Create a new OAuth token cache
-    fn new() -> Self {
-        OAuthTokenCache {
-            tokens: HashMap::new(),
-        }
-    }
-
-    /// Get a token from the cache if it is still valid
-    fn get_token(&self, key: &str) -> Option<String> {
-        if let Some((token, expiry)) = self.tokens.get(key) {
-            if Instant::now() < *expiry {
-                return Some(token.clone());
-            }
-        }
-        None
-    }
-
-    /// Set a token in the cache with an expiration time
-    fn set_token(&mut self, key: String, token: String, expires_in: u64) {
-        let expiry = Instant::now() + Duration::from_secs(expires_in);
-        self.tokens.insert(key, (token, expiry));
-    }
-}
+use auth::{
+    oauth::{
+        OAuthTokenCache,
+        get_oauth_token,
+    },
+    types::AuthType,
+};
 
 /// Rate limiting structure to track requests per client/route
 struct RateLimiter {
@@ -253,23 +229,6 @@ impl RequestMetrics {
     }
 }
 
-/// Token request structure for OAuth
-#[derive(Serialize)]
-struct TokenRequest {
-    grant_type: String,
-    client_id: String,
-    client_secret: String,
-    scope: String,
-}
-
-// Response structure for OAuth token
-#[derive(Deserialize, Debug)]
-struct OAuthTokenResponse {
-    access_token: String,
-    expires_in: Option<u64>,
-    // Other fields may be present but we don't need them for now
-}
-
 /// JWT Claims structure for token validation
 #[derive(Debug, Serialize, Deserialize)]
 struct JwtClaims {
@@ -398,44 +357,6 @@ async fn store_metrics(pool: &SqlitePool, metrics: &RequestMetrics) {
         error!("Failed to store metrics: {}", e);
     } else {
         debug!("Stored metrics for request {}", metrics.id);
-    }
-}
-
-/// Get OAuth token from token endpoint
-async fn get_oauth_token(
-    token_url: &str,
-    client_id: &str,
-    client_secret: &str,
-    scope: &str,
-) -> Result<(String, u64), Box<dyn std::error::Error + Send + Sync>> {
-    info!("Requesting OAuth token from {}", token_url);
-    let client = reqwest::Client::builder().use_rustls_tls().build()?;
-    let request_body = TokenRequest {
-        grant_type: "client_credentials".into(),
-        client_id: client_id.into(),
-        client_secret: client_secret.into(),
-        scope: scope.into(),
-    };
-
-    // Send the request and log the response
-    let response = client
-        .post(token_url)
-        .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .body(serde_json::to_string(&request_body)?)
-        .send()
-        .await;
-
-    match response {
-        Ok(resp) => {
-            let token_response: OAuthTokenResponse = resp.json::<OAuthTokenResponse>().await?;
-            let expires_in = token_response.expires_in.unwrap_or(3600); // Default to 1 hour
-            debug!("Successfully received OAuth token, expires in {}s", expires_in);
-            Ok((token_response.access_token, expires_in))
-        }
-        Err(e) => {
-            error!("OAuth token request failed: {}", e);
-            Err(format!("OAuth token request failed: {}", e).into())
-        }
     }
 }
 

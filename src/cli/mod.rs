@@ -321,20 +321,14 @@ pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
 #[cfg(test)]
 mod test {
     use super::*;
-    use sqlx::{
-        sqlite::{
-            SqlitePoolOptions, 
-            SqliteConnectOptions,
-        },
-        Row,
-    };
+    use sqlx::{sqlite::SqlitePoolOptions,Row};
 
     // TODO - fix this, it doesn't create an in-memory database
     async fn setup_test_db() -> Arc<SqlitePool> {
 
         // Create an in-memory SQLite database for testing
         let pool = SqlitePoolOptions::new()
-            .connect("sqlite::memory")
+            .connect("sqlite::memory:")
             .await
             .unwrap();
         

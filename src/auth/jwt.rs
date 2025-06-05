@@ -35,7 +35,7 @@
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
-use crate::RouteConfig;
+use crate::routing::handlers::RouteConfig;
 use tracing::debug;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -201,7 +201,7 @@ mod tests {
     #[test]
     fn test_jwt_config_creation() {
         // Create a test RouteConfig with JWT settings
-        let route_config = crate::RouteConfig {
+        let route_config = RouteConfig {
             upstream: "http://test.example.com".to_string(),
             auth_type: crate::AuthType::Jwt,
             auth_value: None,
@@ -234,7 +234,7 @@ mod tests {
 
     #[test]
     fn test_jwt_config_creation_with_invalid_algorithm() {
-        let route_config = crate::RouteConfig {
+        let route_config = RouteConfig {
             upstream: "http://test.example.com".to_string(),
             auth_type: crate::AuthType::Jwt,
             auth_value: None,
@@ -261,7 +261,7 @@ mod tests {
 
     #[test]
     fn test_jwt_config_creation_with_missing_secret() {
-        let route_config = crate::RouteConfig {
+        let route_config = RouteConfig {
             upstream: "http://test.example.com".to_string(),
             auth_type: crate::AuthType::Jwt,
             auth_value: None,

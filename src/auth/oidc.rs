@@ -36,7 +36,7 @@
 use serde::{Deserialize};
 use std::collections::HashMap;
 use tracing::{debug, warn};
-use crate::RouteConfig;
+use crate::routing::handlers::RouteConfig;
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                        Private Structs                            ****//

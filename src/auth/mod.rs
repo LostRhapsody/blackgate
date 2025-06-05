@@ -37,7 +37,7 @@ pub mod jwt;
 pub mod oidc;
 
 use std::sync::{Arc, Mutex};
-use crate::RouteConfig;
+use crate::routing::handlers::RouteConfig;
 use oauth::{get_oauth_token, OAuthTokenCache};
 use jwt::{create_jwt_config, validate_jwt_token};
 use types::AuthType;

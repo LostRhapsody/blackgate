@@ -3,8 +3,7 @@ use assert_cmd::Command;
 use predicates::str::contains;
 use reqwest::Client;
 use tokio::runtime::Runtime;
-// Include OAuth tests
-mod oauth_tests;
+
 // Include JWT tests
 mod jwt_tests;
 

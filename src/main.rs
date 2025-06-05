@@ -18,6 +18,7 @@ mod auth;
 mod oauth_test_server;
 mod rate_limiter;
 mod cli;
+mod metrics;
 
 #[cfg(test)]
 mod tests;
@@ -41,75 +42,14 @@ use rate_limiter::{
     check_rate_limit,
 };
 
+use metrics::RequestMetrics;
+
 /// Application state shared across routes, contains DB pool and token cache
 #[derive(Clone)]
 struct AppState {
     db: SqlitePool,
     token_cache: Arc<Mutex<OAuthTokenCache>>,
     rate_limiter: Arc<Mutex<RateLimiter>>,
-}
-
-/// Metrics data structure for tracking request/response information
-#[derive(Debug, Serialize, Deserialize)]
-struct RequestMetrics {
-    id: String,
-    path: String,
-    method: String,
-    request_timestamp: DateTime<Utc>,
-    response_timestamp: Option<DateTime<Utc>>,
-    duration_ms: Option<i64>,
-    request_size_bytes: i64,
-    response_size_bytes: Option<i64>,
-    response_status_code: Option<u16>,
-    upstream_url: Option<String>,
-    auth_type: String,
-    client_ip: Option<String>,
-    user_agent: Option<String>,
-    error_message: Option<String>,
-}
-
-impl RequestMetrics {
-    fn new(path: String, method: String, request_size: i64) -> Self {
-        RequestMetrics {
-            id: Uuid::new_v4().to_string(),
-            path,
-            method,
-            request_timestamp: Utc::now(),
-            response_timestamp: None,
-            duration_ms: None,
-            request_size_bytes: request_size,
-            response_size_bytes: None,
-            response_status_code: None,
-            upstream_url: None,
-            auth_type: AuthType::None.to_string().to_string(),
-            client_ip: None,
-            user_agent: None,
-            error_message: None,
-        }
-    }
-
-    fn complete_request(
-        &mut self,
-        response_size: i64,
-        status_code: u16,
-        upstream_url: Option<String>,
-        auth_type: String,
-    ) {
-        let now = Utc::now();
-        self.response_timestamp = Some(now);
-        self.duration_ms = Some((now - self.request_timestamp).num_milliseconds());
-        self.response_size_bytes = Some(response_size);
-        self.response_status_code = Some(status_code);
-        self.upstream_url = upstream_url;
-        self.auth_type = auth_type;
-    }
-
-    fn set_error(&mut self, error: String) {
-        let now = Utc::now();
-        self.response_timestamp = Some(now);
-        self.duration_ms = Some((now - self.request_timestamp).num_milliseconds());
-        self.error_message = Some(error);
-    }
 }
 
 /// Route configuration structure to hold authentication details

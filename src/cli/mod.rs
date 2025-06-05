@@ -1,3 +1,69 @@
+//! # CLI Module
+//! 
+//! This module provides command-line interface functionality for the Black Gate API Gateway.
+//! It handles parsing and execution of various CLI commands including route management,
+//! metrics viewing, and server operations.
+//! 
+//! ## Features
+//! 
+//! - **Route Management**: Add, remove, and list API gateway routes
+//! - **Authentication Support**: Configure various authentication types (OAuth, JWT, OIDC, Basic, Bearer)
+//! - **Rate Limiting**: Set per-minute and per-hour request limits for routes
+//! - **Metrics**: View request statistics and recent request history
+//! - **Server Operations**: Start the main server or OAuth test server
+//! 
+//! ## Commands
+//! 
+//! ### Route Management
+//! - `add-route`: Add a new route with comprehensive configuration options
+//! - `remove-route`: Remove an existing route by path
+//! - `list-routes`: Display all configured routes in a formatted table
+//! 
+//! ### Metrics and Monitoring
+//! - `metrics`: View request metrics with optional statistics summary and recent request history
+//! 
+//! ### Server Operations
+//! - `start`: Launch the main API gateway server
+//! - `start-oauth`: Start both OAuth test server and API gateway for testing
+//! 
+//! ## Authentication Types Supported
+//! 
+//! - **None**: No authentication required
+//! - **Basic**: HTTP Basic authentication
+//! - **Bearer**: Bearer token authentication
+//! - **OAuth**: OAuth 2.0 with configurable client credentials and token endpoints
+//! - **JWT**: JSON Web Token validation with configurable secrets, algorithms, and claims
+//! - **OIDC**: OpenID Connect with issuer discovery and client configuration
+//! 
+//! ## Rate Limiting
+//! 
+//! Routes can be configured with rate limits:
+//! - Per-minute limit (default: 60 requests)
+//! - Per-hour limit (default: 1000 requests)
+//! 
+//! ## Database Integration
+//! 
+//! All route configurations and metrics are stored in SQLite database tables:
+//! - `routes`: Stores route configuration and authentication settings
+//! - `request_metrics`: Stores request/response metrics and performance data
+//! 
+//! ## Usage Example
+//! 
+//! ```bash
+//! # Add a route with JWT authentication
+//! blackgate add-route --path /api/users --upstream http://localhost:3000 \
+//!   --auth-type JWT --jwt-secret mysecret --jwt-algorithm HS256
+//! 
+//! # List all routes
+//! blackgate list-routes
+//! 
+//! # View metrics with statistics
+//! blackgate metrics --stats --limit 20
+//! 
+//! # Start the server
+//! blackgate start
+//! ```
+
 use clap::{Parser, Subcommand};
 use sqlx::{Row, sqlite::SqlitePool};
 use std::sync::Arc;
@@ -315,7 +381,7 @@ pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-//****                              Test                                 ****//
+//****                              Tests                                ****//
 ///////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]

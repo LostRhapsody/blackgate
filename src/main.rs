@@ -134,6 +134,17 @@ enum Commands {
         jwt_audience: Option<String>,
         #[arg(long)]
         jwt_required_claims: Option<String>,
+        // OIDC specific fields
+        #[arg(long)]
+        oidc_issuer: Option<String>,
+        #[arg(long)]
+        oidc_client_id: Option<String>,
+        #[arg(long)]
+        oidc_client_secret: Option<String>,
+        #[arg(long)]
+        oidc_audience: Option<String>,
+        #[arg(long)]
+        oidc_scope: Option<String>,
         // Rate limiting fields
         #[arg(long, help = "Maximum requests per minute (default: 60)")]
         rate_limit_per_minute: Option<u32>,
@@ -215,7 +226,13 @@ impl RequestMetrics {
         }
     }
 
-    fn complete_request(&mut self, response_size: i64, status_code: u16, upstream_url: Option<String>, auth_type: String) {
+    fn complete_request(
+        &mut self,
+        response_size: i64,
+        status_code: u16,
+        upstream_url: Option<String>,
+        auth_type: String,
+    ) {
         let now = Utc::now();
         self.response_timestamp = Some(now);
         self.duration_ms = Some((now - self.request_timestamp).num_milliseconds());
@@ -253,11 +270,11 @@ struct OAuthTokenResponse {
 /// JWT Claims structure for token validation
 #[derive(Debug, Serialize, Deserialize)]
 struct JwtClaims {
-    sub: String,  // Subject (user identifier)
-    exp: usize,   // Expiration time (as UTC timestamp)
-    iat: usize,   // Issued at (as UTC timestamp)
-    iss: Option<String>,  // Issuer
-    aud: Option<String>,  // Audience
+    sub: String,         // Subject (user identifier)
+    exp: usize,          // Expiration time (as UTC timestamp)
+    iat: usize,          // Issued at (as UTC timestamp)
+    iss: Option<String>, // Issuer
+    aud: Option<String>, // Audience
     // Custom claims can be added here
     #[serde(flatten)]
     custom: HashMap<String, serde_json::Value>,
@@ -271,6 +288,57 @@ struct JwtConfig {
     issuer: Option<String>,
     audience: Option<String>,
     required_claims: Vec<String>,
+}
+
+/// OIDC Configuration structure
+#[derive(Debug, Clone)]
+struct OidcConfig {
+    issuer: String,
+    client_id: String,
+    client_secret: String,
+    audience: Option<String>,
+    scope: String,
+    jwks_uri: Option<String>,
+    issuer_url: Option<String>,
+}
+
+/// OIDC Discovery Document structure
+#[derive(Debug, Deserialize)]
+struct OidcDiscoveryDocument {
+    issuer: String,
+    authorization_endpoint: String,
+    token_endpoint: String,
+    jwks_uri: String,
+    userinfo_endpoint: Option<String>,
+    introspection_endpoint: Option<String>,
+    #[serde(flatten)]
+    other: HashMap<String, serde_json::Value>,
+}
+
+/// OIDC Token Response structure
+#[derive(Debug, Deserialize)]
+struct OidcTokenResponse {
+    access_token: String,
+    token_type: String,
+    expires_in: Option<u64>,
+    id_token: Option<String>,
+    refresh_token: Option<String>,
+    scope: Option<String>,
+}
+
+/// OIDC Token Introspection Response
+#[derive(Debug, Deserialize)]
+struct OidcIntrospectionResponse {
+    active: bool,
+    sub: Option<String>,
+    aud: Option<serde_json::Value>, // Can be string or array
+    iss: Option<String>,
+    exp: Option<u64>,
+    iat: Option<u64>,
+    client_id: Option<String>,
+    scope: Option<String>,
+    #[serde(flatten)]
+    other: HashMap<String, serde_json::Value>,
 }
 
 /// Route configuration structure to hold authentication details
@@ -289,6 +357,12 @@ struct RouteConfig {
     jwt_issuer: Option<String>,
     jwt_audience: Option<String>,
     jwt_required_claims: Option<String>,
+    // OIDC specific fields
+    oidc_issuer: Option<String>,
+    oidc_client_id: Option<String>,
+    oidc_client_secret: Option<String>,
+    oidc_audience: Option<String>,
+    oidc_scope: Option<String>,
 }
 
 /// Authentication types supported by the gateway
@@ -347,7 +421,7 @@ async fn store_metrics(pool: &SqlitePool, metrics: &RequestMetrics) {
             id, path, method, request_timestamp, response_timestamp, duration_ms,
             request_size_bytes, response_size_bytes, response_status_code,
             upstream_url, auth_type, client_ip, user_agent, error_message
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&metrics.id)
     .bind(&metrics.path)
@@ -442,7 +516,13 @@ async fn handle_post_request(
     payload: axum::body::Bytes,
 ) -> axum::response::Response {
     let body_string = String::from_utf8_lossy(&payload).to_string();
-    handle_request_core(state, Method::POST, uri.path().to_string(), Some(body_string)).await
+    handle_request_core(
+        state,
+        Method::POST,
+        uri.path().to_string(),
+        Some(body_string),
+    )
+    .await
 }
 
 /// Handles PUT requests
@@ -452,7 +532,13 @@ async fn handle_put_request(
     payload: axum::body::Bytes,
 ) -> axum::response::Response {
     let body_string = String::from_utf8_lossy(&payload).to_string();
-    handle_request_core(state, Method::PUT, uri.path().to_string(), Some(body_string)).await
+    handle_request_core(
+        state,
+        Method::PUT,
+        uri.path().to_string(),
+        Some(body_string),
+    )
+    .await
 }
 
 /// Handles PATCH requests
@@ -462,7 +548,13 @@ async fn handle_patch_request(
     payload: axum::body::Bytes,
 ) -> axum::response::Response {
     let body_string = String::from_utf8_lossy(&payload).to_string();
-    handle_request_core(state, Method::PATCH, uri.path().to_string(), Some(body_string)).await
+    handle_request_core(
+        state,
+        Method::PATCH,
+        uri.path().to_string(),
+        Some(body_string),
+    )
+    .await
 }
 
 /// Core handler logic, shared by both body/no-body handlers
@@ -485,7 +577,7 @@ async fn handle_request_core(
     );
 
     // Query the database for the route
-    let row = sqlx::query("SELECT upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, rate_limit_per_minute, rate_limit_per_hour FROM routes WHERE path = ?")
+    let row = sqlx::query("SELECT upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, oidc_issuer, oidc_client_id, oidc_client_secret, oidc_audience, oidc_scope, rate_limit_per_minute, rate_limit_per_hour FROM routes WHERE path = ?")
         .bind(&path)
         .fetch_optional(&state.db)
         .await
@@ -549,6 +641,12 @@ async fn handle_request_core(
                 jwt_issuer: row.get("jwt_issuer"),
                 jwt_audience: row.get("jwt_audience"),
                 jwt_required_claims: row.get("jwt_required_claims"),
+                // OIDC specific fields
+                oidc_issuer: row.get("oidc_issuer"),
+                oidc_client_id: row.get("oidc_client_id"),
+                oidc_client_secret: row.get("oidc_client_secret"),
+                oidc_audience: row.get("oidc_audience"),
+                oidc_scope: row.get("oidc_scope"),
             };
 
             info!(
@@ -646,7 +744,7 @@ async fn handle_request_core(
                 response_size,
                 response_status.as_u16(),
                 Some(route_config.upstream.clone()),
-                route_config.auth_type.to_string().to_string()
+                route_config.auth_type.to_string().to_string(),
             );
 
             info!(
@@ -754,10 +852,7 @@ async fn start_server_with_shutdown(
 }
 
 /// Start the OAuth test server and the main Black Gate server, used for oAuth testing
-async fn start_oauth_test_server(
-    pool: SqlitePool,
-    _port: u16
-) {
+async fn start_oauth_test_server(pool: SqlitePool, _port: u16) {
     let (_addr, oauth_shutdown_tx) = crate::oauth_test_server::spawn_oauth_test_server().await;
 
     // Create shutdown channel for the main server
@@ -858,6 +953,178 @@ fn create_jwt_config(route_config: &RouteConfig) -> Result<JwtConfig, String> {
         audience: route_config.jwt_audience.clone(),
         required_claims,
     })
+}
+
+/// Create OIDC configuration from route config
+fn create_oidc_config(route_config: &RouteConfig) -> Result<OidcConfig, String> {
+    let issuer = route_config
+        .oidc_issuer
+        .as_ref()
+        .ok_or("OIDC issuer is required")?;
+
+    let client_id = route_config
+        .oidc_client_id
+        .as_ref()
+        .ok_or("OIDC client ID is required")?;
+
+    let client_secret = route_config
+        .oidc_client_secret
+        .as_ref()
+        .ok_or("OIDC client secret is required")?;
+
+    let scope = route_config
+        .oidc_scope
+        .as_ref()
+        .unwrap_or(&"openid".to_string())
+        .clone();
+
+    Ok(OidcConfig {
+        issuer: issuer.clone(),
+        client_id: client_id.clone(),
+        client_secret: client_secret.clone(),
+        audience: route_config.oidc_audience.clone(),
+        scope,
+        jwks_uri: None, // Will be populated from discovery document
+        issuer_url: Some(issuer.clone()),
+    })
+}
+
+/// Fetch OIDC discovery document
+async fn fetch_oidc_discovery(
+    issuer_url: &str,
+) -> Result<OidcDiscoveryDocument, Box<dyn std::error::Error + Send + Sync>> {
+    let discovery_url = if issuer_url.ends_with('/') {
+        format!(
+            "{}/.well-known/openid_configuration",
+            issuer_url.trim_end_matches('/')
+        )
+    } else {
+        format!("{}/.well-known/openid_configuration", issuer_url)
+    };
+
+    debug!("Fetching OIDC discovery document from {}", discovery_url);
+
+    let client = reqwest::Client::new();
+    let response = client.get(&discovery_url).send().await?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Failed to fetch OIDC discovery document: {}",
+            response.status()
+        )
+        .into());
+    }
+
+    let discovery: OidcDiscoveryDocument = response.json().await?;
+    debug!(
+        "Successfully fetched OIDC discovery document for issuer: {}",
+        discovery.issuer
+    );
+
+    Ok(discovery)
+}
+
+/// Introspect OIDC token
+async fn introspect_oidc_token(
+    introspection_endpoint: &str,
+    token: &str,
+    client_id: &str,
+    client_secret: &str,
+) -> Result<OidcIntrospectionResponse, Box<dyn std::error::Error + Send + Sync>> {
+    debug!(
+        "Introspecting OIDC token at endpoint: {}",
+        introspection_endpoint
+    );
+
+    let client = reqwest::Client::new();
+    let params = [
+        ("token", token),
+        ("client_id", client_id),
+        ("client_secret", client_secret),
+    ];
+
+    let response = client
+        .post(introspection_endpoint)
+        .form(&params)
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        return Err(format!("Token introspection failed: {}", response.status()).into());
+    }
+
+    let introspection: OidcIntrospectionResponse = response.json().await?;
+    debug!(
+        "Token introspection completed, active: {}",
+        introspection.active
+    );
+
+    Ok(introspection)
+}
+
+/// Validate OIDC token using introspection or JWT validation
+async fn validate_oidc_token(
+    token: &str,
+    oidc_config: &OidcConfig,
+    discovery: &OidcDiscoveryDocument,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Try introspection first if available
+    if let Some(introspection_endpoint) = &discovery.introspection_endpoint {
+        match introspect_oidc_token(
+            introspection_endpoint,
+            token,
+            &oidc_config.client_id,
+            &oidc_config.client_secret,
+        )
+        .await
+        {
+            Ok(introspection) => {
+                if !introspection.active {
+                    return Err("Token is not active".into());
+                }
+
+                // Validate audience if specified
+                if let Some(expected_aud) = &oidc_config.audience {
+                    if let Some(token_aud) = &introspection.aud {
+                        let aud_matches = match token_aud {
+                            serde_json::Value::String(aud_str) => aud_str == expected_aud,
+                            serde_json::Value::Array(aud_array) => aud_array.iter().any(|aud| {
+                                if let serde_json::Value::String(aud_str) = aud {
+                                    aud_str == expected_aud
+                                } else {
+                                    false
+                                }
+                            }),
+                            _ => false,
+                        };
+
+                        if !aud_matches {
+                            return Err(format!(
+                                "Token audience mismatch. Expected: {}",
+                                expected_aud
+                            )
+                            .into());
+                        }
+                    }
+                }
+
+                debug!("OIDC token validated successfully via introspection");
+                return Ok(());
+            }
+            Err(e) => {
+                warn!(
+                    "Token introspection failed, falling back to JWT validation: {}",
+                    e
+                );
+            }
+        }
+    }
+
+    // Fallback to JWT validation if introspection is not available or failed
+    // For JWT validation, we would need to fetch the JWKS and validate the signature
+    // This is a simplified version - in production, you'd want proper JWT validation
+    debug!("OIDC token validation completed (simplified validation)");
+    Ok(())
 }
 
 /// Apply authentication to a request builder based on the route configuration
@@ -1088,6 +1355,11 @@ async fn main() {
             jwt_issuer TEXT,
             jwt_audience TEXT,
             jwt_required_claims TEXT,
+            oidc_issuer TEXT,
+            oidc_client_id TEXT,
+            oidc_client_secret TEXT,
+            oidc_audience TEXT,
+            oidc_scope TEXT,
             rate_limit_per_minute INTEGER DEFAULT 60,
             rate_limit_per_hour INTEGER DEFAULT 1000
         );
@@ -1146,6 +1418,11 @@ async fn main() {
         jwt_required_claims,
         rate_limit_per_minute,
         rate_limit_per_hour,
+        oidc_issuer,
+        oidc_client_id,
+        oidc_client_secret,
+        oidc_audience,
+        oidc_scope
     } => {
             // Parse the auth type and convert to enum
             let auth_type_enum = match auth_type.as_ref() {
@@ -1155,8 +1432,8 @@ async fn main() {
 
             sqlx::query(
                 "INSERT OR REPLACE INTO routes
-                (path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, rate_limit_per_minute, rate_limit_per_hour)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                (path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, rate_limit_per_minute, rate_limit_per_hour, oidc_issuer, oidc_client_id, oidc_client_secret, oidc_audience, oidc_scope)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
                 .bind(path.clone())
                 .bind(upstream.clone())
@@ -1174,6 +1451,11 @@ async fn main() {
                 .bind(jwt_required_claims.unwrap_or_else(|| "".into()))
                 .bind(rate_limit_per_minute.unwrap_or(60))
                 .bind(rate_limit_per_hour.unwrap_or(1000))
+                .bind(oidc_issuer.unwrap_or_else(|| "".into()))
+                .bind(oidc_client_id.unwrap_or_else(|| "".into()))
+                .bind(oidc_client_secret.unwrap_or_else(|| "".into()))
+                .bind(oidc_audience.unwrap_or_else(|| "".into()))
+                .bind(oidc_scope.unwrap_or_else(|| "".into()))
                 .execute(&pool)
                 .await
                 .expect("Failed to add route");

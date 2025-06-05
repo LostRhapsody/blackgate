@@ -22,6 +22,13 @@ Current Progress: 7%
 - Rate Limiting - Configurable per-minute and per-hour rate limits for each route
 - Dockerfile included for containerization to self-host
 
+## Current WIP Feature
+
+**OIDC Authentication**
+Status: Fields have been added to structs, commands, fields, and inputs. Partial logic and functions have been implemented, but not tested or validated, just scaffolded.
+Next step: More OIDC research and implementation planning and testing. Claude Sonnet 4 couldn't handle this one entirely solo. 
+
+
 **Sections with detailed information on features below**
 
 ### Authentication Schemes Supported
@@ -58,6 +65,7 @@ $ curl -X POST http://localhost:3000/warehouse -d '{"payload": "test"}' -H "Cont
 
 ## Next Steps
 - User/Password Authentication
+- OIDC Authentication
 - Tenant based Authorization (Restrict routes and actions based on the client we recceive the request from)
 - Enhanced rate limiting features (IP-based limiting, custom time windows)
 - Enhanced web UI

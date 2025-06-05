@@ -69,6 +69,12 @@ mod jwt_tests {
             jwt_issuer: Some("blackgate".to_string()),
             jwt_audience: Some("api".to_string()),
             jwt_required_claims: Some("role,permissions".to_string()),
+            // OIDC fields (not used in JWT test)
+            oidc_issuer: None,
+            oidc_client_id: None,
+            oidc_client_secret: None,
+            oidc_audience: None,
+            oidc_scope: None,
         };
 
         let config = create_jwt_config(&route_config);
@@ -96,6 +102,12 @@ mod jwt_tests {
             jwt_issuer: None,
             jwt_audience: None,
             jwt_required_claims: None,
+            // OIDC fields (not used in JWT test)
+            oidc_issuer: None,
+            oidc_client_id: None,
+            oidc_client_secret: None,
+            oidc_audience: None,
+            oidc_scope: None,
         };
 
         let config = create_jwt_config(&route_config);
@@ -117,6 +129,12 @@ mod jwt_tests {
             jwt_issuer: None,
             jwt_audience: None,
             jwt_required_claims: None,
+            // OIDC fields (not used in JWT test)
+            oidc_issuer: None,
+            oidc_client_id: None,
+            oidc_client_secret: None,
+            oidc_audience: None,
+            oidc_scope: None,
         };
 
         let config = create_jwt_config(&route_config);

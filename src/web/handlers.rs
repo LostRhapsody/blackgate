@@ -24,6 +24,12 @@ pub struct AddRouteForm {
     jwt_issuer: Option<String>,
     jwt_audience: Option<String>,
     jwt_required_claims: Option<String>,
+    // OIDC specific fields
+    oidc_issuer: Option<String>,
+    oidc_client_id: Option<String>,
+    oidc_client_secret: Option<String>,
+    oidc_audience: Option<String>,
+    oidc_scope: Option<String>,
     rate_limit_per_minute: Option<u32>,
     rate_limit_per_hour: Option<u32>,
 }
@@ -399,8 +405,28 @@ pub async fn auth_fields_form(Query(params): Query<std::collections::HashMap<Str
         "##,
         AuthType::Oidc => r##"
             <div>
-                <label for="auth_value">OIDC Configuration (placeholder - not fully implemented):</label><br>
-                <input type="text" id="auth_value" name="auth_value">
+                <label for="oidc_issuer">OIDC Issuer URL:</label><br>
+                <input type="url" id="oidc_issuer" name="oidc_issuer" placeholder="https://auth.example.com">
+            </div>
+            <div>
+                <label for="oidc_client_id">OIDC Client ID:</label><br>
+                <input type="text" id="oidc_client_id" name="oidc_client_id">
+            </div>
+            <div>
+                <label for="oidc_client_secret">OIDC Client Secret:</label><br>
+                <input type="password" id="oidc_client_secret" name="oidc_client_secret">
+            </div>
+            <div>
+                <label for="oidc_audience">OIDC Audience (optional):</label><br>
+                <input type="text" id="oidc_audience" name="oidc_audience">
+            </div>
+            <div>
+                <label for="oidc_scope">OIDC Scope:</label><br>
+                <input type="text" id="oidc_scope" name="oidc_scope" placeholder="openid profile email">
+            </div>
+            <div>
+                <label for="auth_value">OIDC Token for testing (optional):</label><br>
+                <input type="text" id="auth_value" name="auth_value" placeholder="Bearer your-oidc-token">
             </div>
         "##,
         AuthType::None => "",
@@ -416,8 +442,8 @@ pub async fn add_route_submit(State(state): State<AppState>, Form(form): Form<Ad
     // Insert the route into the database
     let result = sqlx::query(
         "INSERT OR REPLACE INTO routes
-        (path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, rate_limit_per_minute, rate_limit_per_hour)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        (path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, oidc_issuer, oidc_client_id, oidc_client_secret, oidc_audience, oidc_scope, rate_limit_per_minute, rate_limit_per_hour)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&form.path)
     .bind(&form.upstream)
@@ -433,6 +459,11 @@ pub async fn add_route_submit(State(state): State<AppState>, Form(form): Form<Ad
     .bind(form.jwt_issuer.unwrap_or_default())
     .bind(form.jwt_audience.unwrap_or_default())
     .bind(form.jwt_required_claims.unwrap_or_default())
+    .bind(form.oidc_issuer.unwrap_or_default())
+    .bind(form.oidc_client_id.unwrap_or_default())
+    .bind(form.oidc_client_secret.unwrap_or_default())
+    .bind(form.oidc_audience.unwrap_or_default())
+    .bind(form.oidc_scope.unwrap_or_default())
     .bind(form.rate_limit_per_minute.unwrap_or(60))
     .bind(form.rate_limit_per_hour.unwrap_or(1000))
     .execute(&state.db)

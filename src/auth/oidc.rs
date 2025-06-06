@@ -44,7 +44,7 @@ use crate::routing::handlers::RouteConfig;
 
 /// OIDC Configuration structure
 #[derive(Debug, Clone)]
-struct OidcConfig {
+pub struct OidcConfig {
     issuer: String,
     client_id: String,
     client_secret: String,
@@ -56,7 +56,7 @@ struct OidcConfig {
 
 /// OIDC Discovery Document structure
 #[derive(Debug, Deserialize)]
-struct OidcDiscoveryDocument {
+pub struct OidcDiscoveryDocument {
     issuer: String,
     authorization_endpoint: String,
     token_endpoint: String,
@@ -69,7 +69,7 @@ struct OidcDiscoveryDocument {
 
 /// OIDC Token Response structure
 #[derive(Debug, Deserialize)]
-struct OidcTokenResponse {
+pub struct OidcTokenResponse {
     access_token: String,
     token_type: String,
     expires_in: Option<u64>,
@@ -80,7 +80,7 @@ struct OidcTokenResponse {
 
 /// OIDC Token Introspection Response
 #[derive(Debug, Deserialize)]
-struct OidcIntrospectionResponse {
+pub struct OidcIntrospectionResponse {
     active: bool,
     sub: Option<String>,
     aud: Option<serde_json::Value>, // Can be string or array

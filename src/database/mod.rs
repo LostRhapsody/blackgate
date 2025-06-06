@@ -250,6 +250,7 @@ impl DatabaseManager {
     }
 
     /// Get the connection pool.
+    #[allow(dead_code)]
     pub fn pool(&self) -> &SqlitePool {
         &self.pool
     }

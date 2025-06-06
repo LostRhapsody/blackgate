@@ -34,6 +34,8 @@
 pub mod types;
 pub mod oauth;
 pub mod jwt;
+
+#[allow(dead_code)]
 pub mod oidc;
 
 use std::sync::{Arc, Mutex};

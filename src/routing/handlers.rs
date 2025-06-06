@@ -60,7 +60,7 @@
 //!     .with_state(app_state);
 //! ```
 
-use axum::{extract::OriginalUri, http::Method};
+use axum::{extract::OriginalUri, http::{HeaderMap, Method}};
 use sqlx::Row;
 use tokio::time::Instant;
 use tracing::{info, warn, error};
@@ -106,38 +106,47 @@ pub struct RouteConfig {
 pub async fn handle_get_request(
     state: axum::extract::State<AppState>,
     OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
 ) -> axum::response::Response {
-    handle_request_core(state, Method::GET, uri.path().to_string(), None).await
+    let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok().map(|s| s.to_string()));
+    handle_request_core(state, Method::GET, uri.path().to_string(), None, auth_header).await
 }
 
 /// Handles HEAD requests
 pub async fn handle_head_request(
     state: axum::extract::State<AppState>,
     OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
 ) -> axum::response::Response {
-    handle_request_core(state, Method::HEAD, uri.path().to_string(), None).await
+    let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok().map(|s| s.to_string()));
+    handle_request_core(state, Method::HEAD, uri.path().to_string(), None, auth_header).await
 }
 
 /// Handles DELETE requests
 pub async fn handle_delete_request(
     state: axum::extract::State<AppState>,
     OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
 ) -> axum::response::Response {
-    handle_request_core(state, Method::DELETE, uri.path().to_string(), None).await
+    let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok().map(|s| s.to_string()));
+    handle_request_core(state, Method::DELETE, uri.path().to_string(), None, auth_header).await
 }
 
 /// Handles POST requests
 pub async fn handle_post_request(
     state: axum::extract::State<AppState>,
     OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
     payload: axum::body::Bytes,
 ) -> axum::response::Response {
     let body_string = String::from_utf8_lossy(&payload).to_string();
+    let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok().map(|s| s.to_string()));
     handle_request_core(
         state,
         Method::POST,
         uri.path().to_string(),
         Some(body_string),
+        auth_header,
     )
     .await
 }
@@ -146,14 +155,17 @@ pub async fn handle_post_request(
 pub async fn handle_put_request(
     state: axum::extract::State<AppState>,
     OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
     payload: axum::body::Bytes,
 ) -> axum::response::Response {
     let body_string = String::from_utf8_lossy(&payload).to_string();
+    let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok().map(|s| s.to_string()));
     handle_request_core(
         state,
         Method::PUT,
         uri.path().to_string(),
         Some(body_string),
+        auth_header,
     )
     .await
 }
@@ -162,14 +174,17 @@ pub async fn handle_put_request(
 pub async fn handle_patch_request(
     state: axum::extract::State<AppState>,
     OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
     payload: axum::body::Bytes,
 ) -> axum::response::Response {
     let body_string = String::from_utf8_lossy(&payload).to_string();
+    let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok().map(|s| s.to_string()));
     handle_request_core(
         state,
         Method::PATCH,
         uri.path().to_string(),
         Some(body_string),
+        auth_header,
     )
     .await
 }
@@ -180,6 +195,7 @@ pub async fn handle_request_core(
     method: Method,
     path: String,
     body: Option<String>,
+    auth_header: Option<String>,
 ) -> axum::response::Response {
     // Initialize metrics
     let request_size = body.as_ref().map_or(0, |b| b.len() as i64);
@@ -271,14 +287,13 @@ pub async fn handle_request_core(
 
             // Create the request builder
             let client = reqwest::Client::new();
-            let builder = client.request(method, &route_config.upstream);
-
-            // Apply authentication
+            let builder = client.request(method, &route_config.upstream);            // Apply authentication
             let builder = match apply_authentication(
                 builder,
                 &route_config,
                 &path,
                 state.token_cache.clone(),
+                auth_header.as_deref(),
             )
             .await
             {

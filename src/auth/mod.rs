@@ -46,12 +46,17 @@ use oidc::{create_oidc_config, fetch_oidc_discovery, validate_oidc_token};
 use types::AuthType;
 use tracing::{debug, error, info, warn};
 
+///////////////////////////////////////////////////////////////////////////////
+//****                       Public Functions                            ****//
+///////////////////////////////////////////////////////////////////////////////
+
 /// Apply authentication to a request builder based on the route configuration
 pub async fn apply_authentication(
     builder: reqwest::RequestBuilder,
     route_config: &RouteConfig,
     path: &str,
     token_cache: Arc<Mutex<OAuthTokenCache>>,
+    auth_header: Option<&str>,
 ) -> Result<reqwest::RequestBuilder, axum::response::Response> {
     match route_config.auth_type {
         AuthType::ApiKey => {
@@ -129,8 +134,7 @@ pub async fn apply_authentication(
                     .body(axum::body::Body::from("OAuth configuration is incomplete"))
                     .unwrap())
             }
-        }
-        AuthType::Jwt => {
+        }        AuthType::Jwt => {
             debug!("Using JWT authentication for route {}", path);
 
             // Create JWT configuration from route config
@@ -145,20 +149,19 @@ pub async fn apply_authentication(
                 }
             };
 
-            // TODO - update this to extact the JWT token from headers or query params
-            if let Some(auth_value) = &route_config.auth_value {
-                // If auth_value contains a JWT token, validate it
-                let token = if auth_value.starts_with("Bearer ") {
-                    &auth_value[7..] // Remove "Bearer " prefix
+            // Extract JWT token from Authorization header
+            if let Some(auth_header_value) = auth_header {
+                let token = if auth_header_value.starts_with("Bearer ") {
+                    &auth_header_value[7..] // Remove "Bearer " prefix
                 } else {
-                    auth_value // Assume it's the raw JWT token
+                    auth_header_value // Assume it's the raw JWT token
                 };
 
                 match validate_jwt_token(token, &jwt_config) {
                     Ok(claims) => {
                         debug!("JWT token validated for route {} with subject: {}", path, claims.sub);
                         // Forward the original token
-                        Ok(builder.header("Authorization", auth_value))
+                        Ok(builder.header("Authorization", auth_header_value))
                     }
                     Err(e) => {
                         warn!("JWT token validation failed for route {}: {}", path, e);
@@ -169,12 +172,14 @@ pub async fn apply_authentication(
                     }
                 }
             } else {
-                // No token provided - this might be acceptable if JWT validation happens upstream
-                debug!("No JWT token provided for route {}, forwarding request without token", path);
-                Ok(builder)
+                // No token provided in Authorization header
+                warn!("No JWT token provided in Authorization header for route {}", path);
+                Err(axum::response::Response::builder()
+                    .status(401)
+                    .body(axum::body::Body::from("Authorization header required"))
+                    .unwrap())
             }
-        }        
-        AuthType::Oidc => {
+        }        AuthType::Oidc => {
             debug!("Using OIDC authentication for route {}", path);
             
             // Create OIDC configuration from route config
@@ -189,14 +194,15 @@ pub async fn apply_authentication(
                 }
             };
 
-            // TODO - update this to extract the OIDC token from headers or query params
-            if let Some(auth_value) = &route_config.auth_value {
-                // If auth_value contains an OIDC token, validate it
-                let token = if auth_value.starts_with("Bearer ") {
-                    &auth_value[7..] // Remove "Bearer " prefix
+            // Extract OIDC token from Authorization header
+            if let Some(auth_header_value) = auth_header {
+                let token = if auth_header_value.starts_with("Bearer ") {
+                    &auth_header_value[7..] // Remove "Bearer " prefix
                 } else {
-                    auth_value // Assume it's the raw token
-                };                // Fetch discovery document
+                    auth_header_value // Assume it's the raw token
+                };
+
+                // Fetch discovery document
                 let discovery = match fetch_oidc_discovery(oidc_config.issuer()).await {
                     Ok(doc) => doc,
                     Err(e) => {
@@ -213,7 +219,7 @@ pub async fn apply_authentication(
                     Ok(()) => {
                         debug!("OIDC token validated successfully for route {}", path);
                         // Forward the original token
-                        Ok(builder.header("Authorization", auth_value))
+                        Ok(builder.header("Authorization", auth_header_value))
                     }
                     Err(e) => {
                         warn!("OIDC token validation failed for route {}: {}", path, e);
@@ -224,9 +230,12 @@ pub async fn apply_authentication(
                     }
                 }
             } else {
-                // No token provided - this might be acceptable if OIDC validation happens upstream
-                debug!("No OIDC token provided for route {}, forwarding request without token", path);
-                Ok(builder)
+                // No token provided in Authorization header
+                warn!("No OIDC token provided in Authorization header for route {}", path);
+                Err(axum::response::Response::builder()
+                    .status(401)
+                    .body(axum::body::Body::from("Authorization header required"))
+                    .unwrap())
             }
         }
         AuthType::None => {

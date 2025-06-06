@@ -264,7 +264,6 @@ pub async fn dashboard_view(State(state): State<AppState>) -> Html<String> {
         <h2>Dashboard</h2>
         <div class="dashboard-container">
             <div id="dashboard-content">
-                <p>This is your central management dashboard for all API routes and metrics.</p>
     "##);
 
     // Add metrics summary

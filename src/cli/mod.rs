@@ -68,6 +68,7 @@ use clap::{Parser, Subcommand};
 use sqlx::{Row, sqlite::SqlitePool};
 use std::sync::Arc;
 use crate::auth::types::AuthType;
+use crate::database::DatabaseManager;
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                        Private Structs                            ****//
@@ -164,6 +165,27 @@ enum Commands {
         #[arg(long)]
         port: Option<u16>,
     },
+    /// Database migration commands
+    #[command(name = "migrate")]
+    Migrate {
+        #[command(subcommand)]
+        action: MigrateAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum MigrateAction {
+    /// Show migration status
+    Status,
+    /// Apply all pending migrations
+    Up,
+    /// Apply a specific migration
+    Apply {
+        #[arg(help = "Migration version to apply")]
+        version: u32,
+    },
+    /// Initialize database without applying migrations
+    Init,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -377,6 +399,63 @@ pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
         Commands::StartOAuthTestServer { port } => {
             crate::server::start_oauth_test_server((**pool).clone(), port.unwrap_or(3001)).await;
         }
+        Commands::Migrate { action } => {
+            let db_manager = DatabaseManager::new((**pool).clone());
+            
+            match action {
+                MigrateAction::Status => {
+                    match db_manager.migration_status().await {
+                        Ok((applied, pending)) => {
+                            println!("Migration Status:");
+                            println!("Applied migrations: {:?}", applied);
+                            println!("Pending migrations: {:?}", pending);
+                            
+                            if pending.is_empty() {
+                                println!("✓ All migrations are up to date");
+                            } else {
+                                println!("⚠ {} migration(s) pending", pending.len());
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to get migration status: {}", e);
+                        }
+                    }
+                }
+                MigrateAction::Up => {
+                    match db_manager.initialize().await {
+                        Ok(()) => {
+                            println!("✓ All migrations applied successfully");
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to apply migrations: {}", e);
+                        }
+                    }
+                }
+                MigrateAction::Apply { version } => {
+                    match db_manager.apply_migration(version).await {
+                        Ok(()) => {
+                            println!("✓ Migration {} applied successfully", version);
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to apply migration {}: {}", version, e);
+                        }
+                    }
+                }
+                MigrateAction::Init => {
+                    match db_manager.initialize_migrations_table_only().await {
+                        Ok(()) => {
+                            println!("✓ Database initialized (migrations table created)");
+                            let (applied, pending) = db_manager.migration_status().await.unwrap_or((vec![], vec![]));
+                            println!("Applied migrations: {:?}", applied);
+                            println!("Pending migrations: {:?}", pending);
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to initialize database: {}", e);
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -389,7 +468,6 @@ mod test {
     use super::*;
     use sqlx::{sqlite::SqlitePoolOptions,Row};
 
-    // TODO - fix this, it doesn't create an in-memory database
     async fn setup_test_db() -> Arc<SqlitePool> {
 
         // Create an in-memory SQLite database for testing

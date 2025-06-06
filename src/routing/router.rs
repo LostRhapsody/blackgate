@@ -39,12 +39,12 @@ use crate::AppState;
 pub fn create_router(state: AppState) -> Router {
     Router::new()
         .merge(web::create_web_router())
-        .route("/*path", get(handle_get_request))
-        .route("/*path", head(handle_head_request))
-        .route("/*path", delete(handle_delete_request))
-        .route("/*path", post(handle_post_request))
-        .route("/*path", put(handle_put_request))
-        .route("/*path", patch(handle_patch_request))
+        .route("/{*path}", get(handle_get_request))
+        .route("/{*path}", head(handle_head_request))
+        .route("/{*path}", delete(handle_delete_request))
+        .route("/{*path}", post(handle_post_request))
+        .route("/{*path}", put(handle_put_request))
+        .route("/{*path}", patch(handle_patch_request))
         .with_state(state)
         .layer(TraceLayer::new_for_http())
 }

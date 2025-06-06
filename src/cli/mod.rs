@@ -429,77 +429,24 @@ mod test {
     use super::*;
     use sqlx::{sqlite::SqlitePoolOptions};
 
-    #[allow(dead_code)]
     async fn setup_test_db() -> Arc<SqlitePool> {
-
         // Create an in-memory SQLite database for testing
         let pool = SqlitePoolOptions::new()
             .connect("sqlite::memory:")
             .await
             .unwrap();
         
-        // Create tables
-        // TODO replace with calls to the database module
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS routes (
-                path TEXT PRIMARY KEY,
-                upstream TEXT NOT NULL,
-                auth_type TEXT DEFAULT 'None',
-                auth_value TEXT DEFAULT '',
-                allowed_methods TEXT DEFAULT '',
-                oauth_token_url TEXT DEFAULT '',
-                oauth_client_id TEXT DEFAULT '',
-                oauth_client_secret TEXT DEFAULT '',
-                oauth_scope TEXT DEFAULT '',
-                jwt_secret TEXT DEFAULT '',
-                jwt_algorithm TEXT DEFAULT 'HS256',
-                jwt_issuer TEXT DEFAULT '',
-                jwt_audience TEXT DEFAULT '',
-                jwt_required_claims TEXT DEFAULT '',
-                rate_limit_per_minute INTEGER DEFAULT 60,
-                rate_limit_per_hour INTEGER DEFAULT 1000,
-                oidc_issuer TEXT DEFAULT '',
-                oidc_client_id TEXT DEFAULT '',
-                oidc_client_secret TEXT DEFAULT '',
-                oidc_audience TEXT DEFAULT '',
-                oidc_scope TEXT DEFAULT ''
-            )"
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
+        // Use the database module to initialize and apply all migrations
+        let db_manager = DatabaseManager::new(pool);
+        db_manager.initialize().await.unwrap();
+        db_manager.apply_pending_migrations().await.unwrap();
         
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS request_metrics (
-                id TEXT PRIMARY KEY,
-                path TEXT NOT NULL,
-                method TEXT NOT NULL,
-                request_timestamp TEXT NOT NULL,
-                response_timestamp TEXT,
-                duration_ms INTEGER,
-                response_status_code INTEGER,
-                request_size_bytes INTEGER NOT NULL,
-                response_size_bytes INTEGER,
-                upstream_url TEXT,
-                auth_type TEXT,
-                error_message TEXT
-            )"
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
+        Arc::new(db_manager.pool().clone())
+    }
 
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS migrations (
-                version INTEGER PRIMARY KEY,
-                name TEXT NOT NULL,
-                applied_at TEXT NOT NULL
-            )"
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        
-        Arc::new(pool)
-    }    
+    #[tokio::test]
+    async fn test_setup_db() {
+        let _pool = setup_test_db().await;
+        // Add actual test logic here
+    }
 }

@@ -16,9 +16,11 @@
 //! Migrations are stored in code as `Migration` structs, tracked in a `migrations` table.
 //! CLI commands allow creating new migrations, listing pending ones, and applying them.
 
+pub mod queries;
+
 use sqlx::{sqlite::SqlitePool, Row};
-use tracing::{info, warn, error};
 use std::collections::HashMap;
+use tracing::{error, info, warn};
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Public Structs                            ****//

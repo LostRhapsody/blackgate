@@ -16,6 +16,8 @@ pub fn create_routes() -> Router<AppState> {
         .route("/web/routes/add-form", get(handlers::add_route_form))
         .route("/web/routes/auth-fields", get(handlers::auth_fields_form))
         .route("/web/routes/add", post(handlers::add_route_submit))
+        .route("/web/routes/edit/{*path}", get(handlers::edit_route_form))
+        // .route("/web/routes/edit/{id}", post(handlers::edit_route_submit))
         .route("/web/routes/{*path}", delete(handlers::delete_route))
         .route("/web/metrics", get(handlers::metrics_view))
 }

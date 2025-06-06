@@ -79,9 +79,12 @@ pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
                             <td>{}</td>
                             <td>{}</td>
                             <td>{}</td>
-                            <td><button hx-delete="/web/routes/{}" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Delete this route?">Delete</button></td>
+                            <td>
+                                <button hx-get="/web/routes/edit/{}" hx-target="#routes-content" hx-swap="outerHTML">Edit</button>
+                                <button hx-delete="/web/routes/{}" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Delete this route?">Delete</button>
+                            </td>
                         </tr>
-            "##, path, upstream, auth_type.to_display_string(), rate_min, rate_hour, path));
+            "##, path, upstream, auth_type.to_display_string(), rate_min, rate_hour, path, path));
         }
 
         html.push_str("</tbody></table>");
@@ -494,4 +497,214 @@ pub async fn delete_route(State(state): State<AppState>, Path(path): Path<String
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
+}
+
+pub async fn edit_route_form(State(state): State<AppState>, Path(path): Path<String>) -> Result<Html<String>, StatusCode> {
+    // Retrieve the route data from the database
+    let row = sqlx::query(
+        "SELECT path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, oidc_issuer, oidc_client_id, oidc_client_secret, oidc_audience, oidc_scope, rate_limit_per_minute, rate_limit_per_hour FROM routes WHERE path = ?"
+    )
+    .bind(&path)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let row = match row {
+        Some(row) => row,
+        None => return Err(StatusCode::NOT_FOUND),
+    };
+
+    // Extract all the route data
+    let route_path: String = row.get("path");
+    let upstream: String = row.get("upstream");
+    let auth_type_str: String = row.get("auth_type");
+    let auth_type = AuthType::from_str(&auth_type_str);
+    let auth_value: String = row.get("auth_value");
+    let allowed_methods: String = row.get("allowed_methods");
+    let oauth_token_url: String = row.get("oauth_token_url");
+    let oauth_client_id: String = row.get("oauth_client_id");
+    let oauth_client_secret: String = row.get("oauth_client_secret");
+    let oauth_scope: String = row.get("oauth_scope");
+    let jwt_secret: String = row.get("jwt_secret");
+    let jwt_algorithm: String = row.get("jwt_algorithm");
+    let jwt_issuer: String = row.get("jwt_issuer");
+    let jwt_audience: String = row.get("jwt_audience");
+    let jwt_required_claims: String = row.get("jwt_required_claims");
+    let oidc_issuer: String = row.get("oidc_issuer");
+    let oidc_client_id: String = row.get("oidc_client_id");
+    let oidc_client_secret: String = row.get("oidc_client_secret");
+    let oidc_audience: String = row.get("oidc_audience");
+    let oidc_scope: String = row.get("oidc_scope");
+    let rate_limit_per_minute: i64 = row.get("rate_limit_per_minute");
+    let rate_limit_per_hour: i64 = row.get("rate_limit_per_hour");
+
+    // Build the HTML form with pre-populated values
+    let mut html = format!(r##"
+        <h3>Edit Route: {}</h3>
+        <form hx-post="/web/routes/edit/{}" hx-target="#routes-content" hx-swap="outerHTML">
+            <div>
+                <label for="path">Path:</label><br>
+                <input type="text" id="path" name="path" required value="{}">
+            </div>
+            
+            <div>
+                <label for="upstream">Upstream URL:</label><br>
+                <input type="url" id="upstream" name="upstream" required value="{}">
+            </div>
+
+            <div>
+                <label for="auth_type">Authentication Type:</label><br>
+                <select id="auth_type" name="auth_type" hx-trigger="change" hx-target="#auth-fields" hx-get="/web/routes/auth-fields" hx-swap="innerHTML">
+                    <option value="none"{}>None</option>
+                    <option value="api-key"{}>API Key</option>
+                    <option value="oauth2"{}>OAuth 2.0</option>
+                    <option value="jwt"{}>JWT</option>
+                    <option value="oidc"{}>OIDC</option>
+                </select>
+            </div>
+
+            <div id="auth-fields">
+    "##, 
+        route_path, 
+        route_path, 
+        route_path, 
+        upstream,
+        if auth_type == AuthType::None { " selected" } else { "" },
+        if auth_type == AuthType::ApiKey { " selected" } else { "" },
+        if auth_type == AuthType::OAuth2 { " selected" } else { "" },
+        if auth_type == AuthType::Jwt { " selected" } else { "" },
+        if auth_type == AuthType::Oidc { " selected" } else { "" }
+    );
+
+    // Add auth-specific fields based on the current auth type
+    match auth_type {
+        AuthType::ApiKey => {
+            html.push_str(&format!(r##"
+                <div>
+                    <label for="auth_value">API Key (with Bearer prefix if needed):</label><br>
+                    <input type="text" id="auth_value" name="auth_value" value="{}">
+                </div>
+            "##, auth_value));
+        },
+        AuthType::OAuth2 => {
+            html.push_str(&format!(r##"
+                <div>
+                    <label for="oauth_token_url">OAuth Token URL:</label><br>
+                    <input type="url" id="oauth_token_url" name="oauth_token_url" value="{}">
+                </div>
+                <div>
+                    <label for="oauth_client_id">OAuth Client ID:</label><br>
+                    <input type="text" id="oauth_client_id" name="oauth_client_id" value="{}">
+                </div>
+                <div>
+                    <label for="oauth_client_secret">OAuth Client Secret:</label><br>
+                    <input type="password" id="oauth_client_secret" name="oauth_client_secret" value="{}">
+                </div>
+                <div>
+                    <label for="oauth_scope">OAuth Scope:</label><br>
+                    <input type="text" id="oauth_scope" name="oauth_scope" value="{}">
+                </div>
+            "##, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope));
+        },
+        AuthType::Jwt => {
+            html.push_str(&format!(r##"
+                <div>
+                    <label for="jwt_secret">JWT Secret:</label><br>
+                    <input type="password" id="jwt_secret" name="jwt_secret" value="{}">
+                </div>
+                <div>
+                    <label for="jwt_algorithm">JWT Algorithm:</label><br>
+                    <select id="jwt_algorithm" name="jwt_algorithm">
+                        <option value="HS256"{}>HS256</option>
+                        <option value="HS384"{}>HS384</option>
+                        <option value="HS512"{}>HS512</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="jwt_issuer">JWT Issuer (optional):</label><br>
+                    <input type="text" id="jwt_issuer" name="jwt_issuer" value="{}">
+                </div>
+                <div>
+                    <label for="jwt_audience">JWT Audience (optional):</label><br>
+                    <input type="text" id="jwt_audience" name="jwt_audience" value="{}">
+                </div>
+                <div>
+                    <label for="jwt_required_claims">JWT Required Claims (comma-separated, optional):</label><br>
+                    <input type="text" id="jwt_required_claims" name="jwt_required_claims" value="{}">
+                </div>
+                <div>
+                    <label for="auth_value">JWT Token for testing (optional):</label><br>
+                    <input type="text" id="auth_value" name="auth_value" value="{}">
+                </div>
+            "##, 
+                jwt_secret,
+                if jwt_algorithm == "HS256" { " selected" } else { "" },
+                if jwt_algorithm == "HS384" { " selected" } else { "" },
+                if jwt_algorithm == "HS512" { " selected" } else { "" },
+                jwt_issuer,
+                jwt_audience,
+                jwt_required_claims,
+                auth_value
+            ));
+        },
+        AuthType::Oidc => {
+            html.push_str(&format!(r##"
+                <div>
+                    <label for="oidc_issuer">OIDC Issuer URL:</label><br>
+                    <input type="url" id="oidc_issuer" name="oidc_issuer" value="{}">
+                </div>
+                <div>
+                    <label for="oidc_client_id">OIDC Client ID:</label><br>
+                    <input type="text" id="oidc_client_id" name="oidc_client_id" value="{}">
+                </div>
+                <div>
+                    <label for="oidc_client_secret">OIDC Client Secret:</label><br>
+                    <input type="password" id="oidc_client_secret" name="oidc_client_secret" value="{}">
+                </div>
+                <div>
+                    <label for="oidc_audience">OIDC Audience (optional):</label><br>
+                    <input type="text" id="oidc_audience" name="oidc_audience" value="{}">
+                </div>
+                <div>
+                    <label for="oidc_scope">OIDC Scope:</label><br>
+                    <input type="text" id="oidc_scope" name="oidc_scope" value="{}">
+                </div>
+                <div>
+                    <label for="auth_value">OIDC Token for testing (optional):</label><br>
+                    <input type="text" id="auth_value" name="auth_value" value="{}">
+                </div>
+            "##, oidc_issuer, oidc_client_id, oidc_client_secret, oidc_audience, oidc_scope, auth_value));
+        },
+        AuthType::None => {
+            // No additional fields for None auth type
+        },
+    }
+
+    // Complete the form with remaining fields
+    html.push_str(&format!(r##"
+            </div>
+
+            <div>
+                <label for="allowed_methods">Allowed Methods (comma-separated, leave blank for all):</label><br>
+                <input type="text" id="allowed_methods" name="allowed_methods" value="{}">
+            </div>
+
+            <div>
+                <label for="rate_limit_per_minute">Rate Limit Per Minute:</label><br>
+                <input type="number" id="rate_limit_per_minute" name="rate_limit_per_minute" value="{}">
+            </div>
+
+            <div>
+                <label for="rate_limit_per_hour">Rate Limit Per Hour:</label><br>
+                <input type="number" id="rate_limit_per_hour" name="rate_limit_per_hour" value="{}">
+            </div>
+
+            <div>
+                <button type="submit">Update Route</button>
+                <button type="button" hx-get="/web/routes" hx-target="#content" hx-swap="innerHTML">Cancel</button>
+            </div>
+        </form>
+    "##, allowed_methods, rate_limit_per_minute, rate_limit_per_hour));
+
+    Ok(Html(html))
 }

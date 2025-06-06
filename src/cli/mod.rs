@@ -372,10 +372,10 @@ pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
             }
         }
         Commands::Start => {
-            crate::start_server((**pool).clone()).await;
+            crate::server::start_server((**pool).clone()).await;
         }
         Commands::StartOAuthTestServer { port } => {
-            crate::start_oauth_test_server((**pool).clone(), port.unwrap_or(3001)).await;
+            crate::server::start_oauth_test_server((**pool).clone(), port.unwrap_or(3001)).await;
         }
     }
 }

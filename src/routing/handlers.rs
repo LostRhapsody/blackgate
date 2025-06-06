@@ -67,7 +67,7 @@ use tracing::{info, warn, error};
 use crate::{
     auth::{apply_authentication, types::AuthType}, metrics::{
     store_metrics, RequestMetrics
-    }, rate_limiter::check_rate_limit, AppState
+    }, rate_limiter::check_rate_limit, AppState, database::queries
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -191,12 +191,8 @@ pub async fn handle_request_core(
         path = %path,
         request_size_bytes = request_size,
         "Incoming request"
-    );
-
-    // Query the database for the route
-    let row = sqlx::query("SELECT upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, oidc_issuer, oidc_client_id, oidc_client_secret, oidc_audience, oidc_scope, rate_limit_per_minute, rate_limit_per_hour FROM routes WHERE path = ?")
-        .bind(&path)
-        .fetch_optional(&state.db)
+    );    // Query the database for the route
+    let row = queries::fetch_route_config_by_path(&state.db, &path)
         .await
         .expect("Database query failed");
 

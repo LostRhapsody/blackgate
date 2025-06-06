@@ -50,7 +50,7 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 use sqlx::SqlitePool;
 use tracing::{debug, error};
-use crate::auth::types::AuthType;
+use crate::{auth::types::AuthType, database::queries};
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Public Structs                            ****//
@@ -125,28 +125,24 @@ impl RequestMetrics {
 
 /// Store request metrics in the database
 pub async fn store_metrics(pool: &SqlitePool, metrics: &RequestMetrics) {
-    let result = sqlx::query(
-        "INSERT INTO request_metrics (
-            id, path, method, request_timestamp, response_timestamp, duration_ms,
-            request_size_bytes, response_size_bytes, response_status_code,
-            upstream_url, auth_type, client_ip, user_agent, error_message
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    let response_timestamp_str = metrics.response_timestamp.map(|t| t.to_rfc3339());
+    let result = queries::store_request_metrics(
+        pool,
+        &metrics.id,
+        &metrics.path,
+        &metrics.method,
+        &metrics.request_timestamp.to_rfc3339(),
+        response_timestamp_str.as_deref(),
+        metrics.duration_ms,
+        metrics.request_size_bytes,
+        metrics.response_size_bytes,
+        metrics.response_status_code,
+        &metrics.upstream_url.as_deref().unwrap_or(""),
+        &metrics.auth_type,
+        &metrics.client_ip.as_deref().unwrap_or(""),
+        &metrics.user_agent.as_deref().unwrap_or(""),
+        metrics.error_message.as_deref(),
     )
-    .bind(&metrics.id)
-    .bind(&metrics.path)
-    .bind(&metrics.method)
-    .bind(metrics.request_timestamp.to_rfc3339())
-    .bind(metrics.response_timestamp.map(|t| t.to_rfc3339()))
-    .bind(metrics.duration_ms)
-    .bind(metrics.request_size_bytes)
-    .bind(metrics.response_size_bytes)
-    .bind(metrics.response_status_code)
-    .bind(&metrics.upstream_url)
-    .bind(&metrics.auth_type)
-    .bind(&metrics.client_ip)
-    .bind(&metrics.user_agent)
-    .bind(&metrics.error_message)
-    .execute(pool)
     .await;
 
     if let Err(e) = result {

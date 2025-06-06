@@ -1,7 +1,7 @@
 use axum::{response::Html, extract::{State, Form, Path, Query}, http::StatusCode};
 use serde::Deserialize;
 use sqlx::Row;
-use crate::{AppState, AuthType};
+use crate::{AppState, AuthType, database::queries};
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Public Structs                            ****//
@@ -246,35 +246,18 @@ fn generate_route_form(is_edit: bool, path: &str, form_data: RouteFormData) -> S
 
 pub async fn dashboard_view(State(state): State<AppState>) -> Html<String> {
     // Get recent metrics for last 5 requests
-    let recent_requests = sqlx::query(
-        "SELECT path, method, request_timestamp, duration_ms, response_status_code
-         FROM request_metrics
-         ORDER BY request_timestamp DESC
-         LIMIT 5"
-    )
-    .fetch_all(&state.db)
-    .await
-    .unwrap_or_default();
+    let recent_requests = queries::fetch_recent_requests_for_dashboard(&state.db, 5)
+        .await
+        .unwrap_or_default();
 
     // Get basic metrics summary
-    let stats_query = sqlx::query(
-        "SELECT
-            COUNT(*) as total_requests,
-            AVG(duration_ms) as avg_duration_ms,
-            COUNT(CASE WHEN response_status_code >= 200 AND response_status_code < 300 THEN 1 END) as success_count
-        FROM request_metrics
-        WHERE response_timestamp IS NOT NULL"
-    )
-    .fetch_optional(&state.db)
-    .await
-    .unwrap_or_default();
+    let stats_query = queries::fetch_basic_metrics_summary(&state.db)
+        .await
+        .unwrap_or_default();
 
     // Get configured routes count
-    let routes_count = sqlx::query("SELECT COUNT(*) as count FROM routes")
-        .fetch_optional(&state.db)
+    let routes_count = queries::count_routes(&state.db)
         .await
-        .unwrap_or_default()
-        .map(|row| row.get::<i64, _>("count"))
         .unwrap_or(0);
 
     let mut html = String::from(r##"
@@ -400,8 +383,7 @@ pub async fn dashboard_view(State(state): State<AppState>) -> Html<String> {
 }
 
 pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
-    let rows = sqlx::query("SELECT path, upstream, auth_type, rate_limit_per_minute, rate_limit_per_hour FROM routes")
-        .fetch_all(&state.db)
+    let rows = queries::fetch_routes_basic_info(&state.db)
         .await
         .unwrap_or_default();
 
@@ -464,22 +446,9 @@ pub async fn metrics_view(State(state): State<AppState>, Query(query): Query<Met
     let limit = query.limit.unwrap_or(20);
     
     // Get metrics statistics
-    let stats_query = sqlx::query(
-        "SELECT
-            COUNT(*) as total_requests,
-            AVG(duration_ms) as avg_duration_ms,
-            MIN(duration_ms) as min_duration_ms,
-            MAX(duration_ms) as max_duration_ms,
-            COUNT(CASE WHEN response_status_code >= 200 AND response_status_code < 300 THEN 1 END) as success_count,
-            COUNT(CASE WHEN response_status_code >= 400 THEN 1 END) as error_count,
-            SUM(request_size_bytes) as total_request_bytes,
-            SUM(response_size_bytes) as total_response_bytes
-        FROM request_metrics
-        WHERE response_timestamp IS NOT NULL"
-    )
-    .fetch_optional(&state.db)
-    .await
-    .unwrap_or_default();
+    let stats_query = queries::fetch_metrics_statistics(&state.db)
+        .await
+        .unwrap_or_default();
     let mut html = String::from(r##"
         <h2>Metrics Dashboard</h2>
         <div class="dashboard-container">
@@ -550,17 +519,9 @@ pub async fn metrics_view(State(state): State<AppState>, Query(query): Query<Met
         "##);
     }    
     // Get recent requests
-    let rows = sqlx::query(
-        "SELECT id, path, method, request_timestamp, duration_ms, response_status_code,
-                request_size_bytes, response_size_bytes, upstream_url, auth_type, error_message
-         FROM request_metrics
-         ORDER BY request_timestamp DESC
-         LIMIT ?"
-    )
-    .bind(limit as i64)
-    .fetch_all(&state.db)
-    .await
-    .unwrap_or_default();
+    let rows = queries::fetch_recent_request_metrics(&state.db, limit as i32)
+        .await
+        .unwrap_or_default();
 
     html.push_str(&format!(r##"
         <div class="dashboard-section">
@@ -679,13 +640,9 @@ pub async fn add_route_form() -> Html<String> {
 }
 
 pub async fn edit_route_form(State(state): State<AppState>, Path(path): Path<String>) -> Result<Html<String>, StatusCode> {
-    let row = sqlx::query(
-        "SELECT path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, oidc_issuer, oidc_client_id, oidc_client_secret, oidc_audience, oidc_scope, rate_limit_per_minute, rate_limit_per_hour FROM routes WHERE path = ?"
-    )
-    .bind(&path)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let row = queries::fetch_route_by_path_for_edit(&state.db, &path)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let row = match row {
         Some(row) => row,
@@ -722,33 +679,30 @@ pub async fn edit_route_form(State(state): State<AppState>, Path(path): Path<Str
 pub async fn add_route_submit(State(state): State<AppState>, Form(form): Form<RouteFormData>) -> Result<Html<String>, StatusCode> {
     let auth_type_enum = AuthType::from_str(&form.auth_type);
 
-    let result = sqlx::query(
-        "INSERT OR REPLACE INTO routes
-        (path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, oidc_issuer, oidc_client_id, oidc_client_secret, oidc_audience, oidc_scope, rate_limit_per_minute, rate_limit_per_hour)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    let result = queries::insert_or_replace_route(
+        &state.db,
+        &form.path,
+        &form.upstream,
+        &auth_type_enum,
+        &form.auth_value.unwrap_or_default(),
+        &form.allowed_methods.unwrap_or_default(),
+        &form.oauth_token_url.unwrap_or_default(),
+        &form.oauth_client_id.unwrap_or_default(),
+        &form.oauth_client_secret.unwrap_or_default(),
+        &form.oauth_scope.unwrap_or_default(),
+        &form.jwt_secret.unwrap_or_default(),
+        &form.jwt_algorithm.unwrap_or_else(|| "HS256".to_string()),
+        &form.jwt_issuer.unwrap_or_default(),
+        &form.jwt_audience.unwrap_or_default(),
+        &form.jwt_required_claims.unwrap_or_default(),
+        form.rate_limit_per_minute.unwrap_or(60),
+        form.rate_limit_per_hour.unwrap_or(1000),
+        &form.oidc_issuer.unwrap_or_default(),
+        &form.oidc_client_id.unwrap_or_default(),
+        &form.oidc_client_secret.unwrap_or_default(),
+        &form.oidc_audience.unwrap_or_default(),
+        &form.oidc_scope.unwrap_or_default(),
     )
-    .bind(&form.path)
-    .bind(&form.upstream)
-    .bind(auth_type_enum.to_string())
-    .bind(form.auth_value.unwrap_or_default())
-    .bind(form.allowed_methods.unwrap_or_default())
-    .bind(form.oauth_token_url.unwrap_or_default())
-    .bind(form.oauth_client_id.unwrap_or_default())
-    .bind(form.oauth_client_secret.unwrap_or_default())
-    .bind(form.oauth_scope.unwrap_or_default())
-    .bind(form.jwt_secret.unwrap_or_default())
-    .bind(form.jwt_algorithm.unwrap_or_else(|| "HS256".to_string()))
-    .bind(form.jwt_issuer.unwrap_or_default())
-    .bind(form.jwt_audience.unwrap_or_default())
-    .bind(form.jwt_required_claims.unwrap_or_default())
-    .bind(form.oidc_issuer.unwrap_or_default())
-    .bind(form.oidc_client_id.unwrap_or_default())
-    .bind(form.oidc_client_secret.unwrap_or_default())
-    .bind(form.oidc_audience.unwrap_or_default())
-    .bind(form.oidc_scope.unwrap_or_default())
-    .bind(form.rate_limit_per_minute.unwrap_or(60))
-    .bind(form.rate_limit_per_hour.unwrap_or(1000))
-    .execute(&state.db)
     .await;
 
     match result {
@@ -761,9 +715,7 @@ pub async fn add_route_submit(State(state): State<AppState>, Form(form): Form<Ro
 }
 
 pub async fn delete_route(State(state): State<AppState>, Path(path): Path<String>) -> Result<Html<String>, StatusCode> {
-    let result = sqlx::query("DELETE FROM routes WHERE path = ?")
-        .bind(&path)
-        .execute(&state.db)
+    let result = queries::delete_route_by_path(&state.db, &path)
         .await;
 
     match result {
@@ -778,38 +730,31 @@ pub async fn delete_route(State(state): State<AppState>, Path(path): Path<String
 pub async fn edit_route_submit(State(state): State<AppState>, Path(path): Path<String>, Form(form): Form<RouteFormData>) -> Result<Html<String>, StatusCode> {
     let auth_type_enum = AuthType::from_str(&form.auth_type);
 
-    let result = sqlx::query(
-        "UPDATE routes SET 
-        path = ?, upstream = ?, auth_type = ?, auth_value = ?, allowed_methods = ?, 
-        oauth_token_url = ?, oauth_client_id = ?, oauth_client_secret = ?, oauth_scope = ?,
-        jwt_secret = ?, jwt_algorithm = ?, jwt_issuer = ?, jwt_audience = ?, jwt_required_claims = ?,
-        oidc_issuer = ?, oidc_client_id = ?, oidc_client_secret = ?, oidc_audience = ?, oidc_scope = ?,
-        rate_limit_per_minute = ?, rate_limit_per_hour = ?
-        WHERE path = ?"
+    let result = queries::update_route_by_path(
+        &state.db,
+        &form.path,
+        &form.upstream,
+        &auth_type_enum,
+        &form.auth_value.unwrap_or_default(),
+        &form.allowed_methods.unwrap_or_default(),
+        &form.oauth_token_url.unwrap_or_default(),
+        &form.oauth_client_id.unwrap_or_default(),
+        &form.oauth_client_secret.unwrap_or_default(),
+        &form.oauth_scope.unwrap_or_default(),
+        &form.jwt_secret.unwrap_or_default(),
+        &form.jwt_algorithm.unwrap_or_else(|| "HS256".to_string()),
+        &form.jwt_issuer.unwrap_or_default(),
+        &form.jwt_audience.unwrap_or_default(),
+        &form.jwt_required_claims.unwrap_or_default(),
+        &form.oidc_issuer.unwrap_or_default(),
+        &form.oidc_client_id.unwrap_or_default(),
+        &form.oidc_client_secret.unwrap_or_default(),
+        &form.oidc_audience.unwrap_or_default(),
+        &form.oidc_scope.unwrap_or_default(),
+        form.rate_limit_per_minute.unwrap_or(60),
+        form.rate_limit_per_hour.unwrap_or(1000),
+        &path,
     )
-    .bind(&form.path)
-    .bind(&form.upstream)
-    .bind(auth_type_enum.to_string())
-    .bind(form.auth_value.unwrap_or_default())
-    .bind(form.allowed_methods.unwrap_or_default())
-    .bind(form.oauth_token_url.unwrap_or_default())
-    .bind(form.oauth_client_id.unwrap_or_default())
-    .bind(form.oauth_client_secret.unwrap_or_default())
-    .bind(form.oauth_scope.unwrap_or_default())
-    .bind(form.jwt_secret.unwrap_or_default())
-    .bind(form.jwt_algorithm.unwrap_or_else(|| "HS256".to_string()))
-    .bind(form.jwt_issuer.unwrap_or_default())
-    .bind(form.jwt_audience.unwrap_or_default())
-    .bind(form.jwt_required_claims.unwrap_or_default())
-    .bind(form.oidc_issuer.unwrap_or_default())
-    .bind(form.oidc_client_id.unwrap_or_default())
-    .bind(form.oidc_client_secret.unwrap_or_default())
-    .bind(form.oidc_audience.unwrap_or_default())
-    .bind(form.oidc_scope.unwrap_or_default())
-    .bind(form.rate_limit_per_minute.unwrap_or(60))
-    .bind(form.rate_limit_per_hour.unwrap_or(1000))
-    .bind(&path)
-    .execute(&state.db)
     .await;
 
     match result {

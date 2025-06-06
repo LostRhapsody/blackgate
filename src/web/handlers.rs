@@ -35,6 +35,7 @@ pub struct RouteFormData {
     oidc_scope: Option<String>,
     rate_limit_per_minute: Option<u32>,
     rate_limit_per_hour: Option<u32>,
+    health_endpoint: Option<String>,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -670,6 +671,7 @@ pub async fn edit_route_form(State(state): State<AppState>, Path(path): Path<Str
         oidc_scope: Some(row.get("oidc_scope")),
         rate_limit_per_minute: Some(row.get::<i64, _>("rate_limit_per_minute") as u32),
         rate_limit_per_hour: Some(row.get::<i64, _>("rate_limit_per_hour") as u32),
+        health_endpoint: Some(row.get("health_endpoint")),
     };
 
     Ok(Html(generate_route_form(true, &path, form_data)))
@@ -701,6 +703,7 @@ pub async fn add_route_submit(State(state): State<AppState>, Form(form): Form<Ro
         &form.oidc_client_secret.unwrap_or_default(),
         &form.oidc_audience.unwrap_or_default(),
         &form.oidc_scope.unwrap_or_default(),
+        &form.health_endpoint.unwrap_or_default(),
     )
     .await;
 
@@ -752,6 +755,7 @@ pub async fn edit_route_submit(State(state): State<AppState>, Path(path): Path<S
         &form.oidc_scope.unwrap_or_default(),
         form.rate_limit_per_minute.unwrap_or(60),
         form.rate_limit_per_hour.unwrap_or(1000),
+        &form.health_endpoint.unwrap_or_default(),
         &path,
     )
     .await;

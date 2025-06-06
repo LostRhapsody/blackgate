@@ -159,6 +159,29 @@ impl DatabaseManager {
                 name: "add_request_metrics_payload".to_string(),
                 sql: "ALTER TABLE request_metrics ADD COLUMN payload TEXT DEFAULT '';".to_string(),
             },
+            Migration {
+                version: 7,
+                name: "add_health_fields_to_routes".to_string(),
+                sql: r#"
+                    ALTER TABLE routes ADD COLUMN health_endpoint TEXT;
+                    ALTER TABLE routes ADD COLUMN health_check_status TEXT DEFAULT 'Available';
+                "#.to_string(),
+            },
+            Migration {
+                version: 8,
+                name: "create_route_health_checks_table".to_string(),
+                sql: r#"
+                    CREATE TABLE IF NOT EXISTS route_health_checks (
+                        path TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        response_time_ms INTEGER,
+                        error_message TEXT,
+                        checked_at TEXT NOT NULL,
+                        method_used TEXT NOT NULL,
+                        PRIMARY KEY (path, checked_at)
+                    );
+                "#.to_string(),
+            },
         ]
     }
 

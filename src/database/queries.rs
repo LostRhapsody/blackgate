@@ -41,11 +41,12 @@ pub async fn insert_or_replace_route(
     oidc_client_secret: &str,
     oidc_audience: &str,
     oidc_scope: &str,
+    health_endpoint: &str,
 ) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
     sqlx::query(
         "INSERT OR REPLACE INTO routes
-        (path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, rate_limit_per_minute, rate_limit_per_hour, oidc_issuer, oidc_client_id, oidc_client_secret, oidc_audience, oidc_scope)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        (path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, rate_limit_per_minute, rate_limit_per_hour, oidc_issuer, oidc_client_id, oidc_client_secret, oidc_audience, oidc_scope, health_endpoint)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(path)
     .bind(upstream)
@@ -64,10 +65,10 @@ pub async fn insert_or_replace_route(
     .bind(rate_limit_per_minute)
     .bind(rate_limit_per_hour)
     .bind(oidc_issuer)
-    .bind(oidc_client_id)
-    .bind(oidc_client_secret)
+    .bind(oidc_client_id)    .bind(oidc_client_secret)
     .bind(oidc_audience)
     .bind(oidc_scope)
+    .bind(health_endpoint)
     .execute(pool)
     .await
 }
@@ -105,9 +106,8 @@ pub async fn fetch_routes_basic_info(
 pub async fn fetch_route_by_path_for_edit(
     pool: &SqlitePool,
     path: &str,
-) -> Result<Option<sqlx::sqlite::SqliteRow>, sqlx::Error> {
-    sqlx::query(
-        "SELECT path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, oidc_issuer, oidc_client_id, oidc_client_secret, oidc_audience, oidc_scope, rate_limit_per_minute, rate_limit_per_hour FROM routes WHERE path = ?"
+) -> Result<Option<sqlx::sqlite::SqliteRow>, sqlx::Error> {    sqlx::query(
+        "SELECT path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, oidc_issuer, oidc_client_id, oidc_client_secret, oidc_audience, oidc_scope, rate_limit_per_minute, rate_limit_per_hour, health_endpoint FROM routes WHERE path = ?"
     )
     .bind(path)
     .fetch_optional(pool)
@@ -138,15 +138,15 @@ pub async fn update_route_by_path(
     oidc_scope: &str,
     rate_limit_per_minute: u32,
     rate_limit_per_hour: u32,
+    health_endpoint: &str,
     original_path: &str,
-) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
-    sqlx::query(
+) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {    sqlx::query(
         "UPDATE routes SET 
         path = ?, upstream = ?, auth_type = ?, auth_value = ?, allowed_methods = ?, 
         oauth_token_url = ?, oauth_client_id = ?, oauth_client_secret = ?, oauth_scope = ?,
         jwt_secret = ?, jwt_algorithm = ?, jwt_issuer = ?, jwt_audience = ?, jwt_required_claims = ?,
         oidc_issuer = ?, oidc_client_id = ?, oidc_client_secret = ?, oidc_audience = ?, oidc_scope = ?,
-        rate_limit_per_minute = ?, rate_limit_per_hour = ?
+        rate_limit_per_minute = ?, rate_limit_per_hour = ?, health_endpoint = ?
         WHERE path = ?"
     )
     .bind(new_path)
@@ -170,6 +170,7 @@ pub async fn update_route_by_path(
     .bind(oidc_scope)
     .bind(rate_limit_per_minute)
     .bind(rate_limit_per_hour)
+    .bind(health_endpoint)
     .bind(original_path)
     .execute(pool)
     .await

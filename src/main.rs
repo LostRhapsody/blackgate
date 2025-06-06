@@ -8,6 +8,7 @@
 //! database
 //! web
 //! oauth_test_server
+//! health
 //! tests
 //! main.rs
 
@@ -20,6 +21,7 @@ mod metrics;
 mod routing;
 mod server;
 mod database;
+mod health;
 
 #[cfg(test)]
 mod tests;

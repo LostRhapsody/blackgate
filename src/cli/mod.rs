@@ -143,6 +143,9 @@ enum Commands {
         rate_limit_per_minute: Option<u32>,
         #[arg(long, help = "Maximum requests per hour (default: 1000)")]
         rate_limit_per_hour: Option<u32>,
+        // health endpoint (optional)
+        #[arg(long, help = "Health check endpoint (optional)")]
+        health_endpoint: Option<String>,
     },
     /// Remove a route from the API gateway
     #[command(name = "remove-route")]
@@ -175,6 +178,14 @@ enum Commands {
     Migrate {
         #[command(subcommand)]
         action: MigrateAction,
+    },
+    /// View health status of all routes
+    #[command(name = "health")]
+    Health {
+        #[arg(long, help = "Show detailed health check history")]
+        detailed: bool,
+        #[arg(long, help = "Show only unhealthy routes")]
+        unhealthy_only: bool,
     },
 }
 
@@ -227,7 +238,8 @@ pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
             oidc_client_id,
             oidc_client_secret,
             oidc_audience,
-            oidc_scope
+            oidc_scope,
+            health_endpoint,
         } => {
                 // Parse the auth type and convert to enum
                 let auth_type_enum = match auth_type.as_ref() {
@@ -258,6 +270,7 @@ pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
                     &oidc_client_secret.unwrap_or_else(|| "".into()),
                     &oidc_audience.unwrap_or_else(|| "".into()),
                     &oidc_scope.unwrap_or_else(|| "".into()),
+                    &health_endpoint.unwrap_or_else(|| "".into()),
                 )
                 .await
                 .expect("Failed to add route");
@@ -414,6 +427,114 @@ pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
                         Ok(_) => (),
                         Err(e) => error!("Failed to view schema: {}", e),
                     }
+                }
+            }
+        }
+        Commands::Health { detailed, unhealthy_only } => {
+            if detailed {
+                // Show detailed health check history
+                // TODO turn this into a query function in queries.rs
+                let rows = sqlx::query(
+                    "SELECT * FROM route_health_checks ORDER BY checked_at DESC LIMIT 50"
+                )
+                .fetch_all(*pool)
+                .await
+                .expect("Failed to fetch health check history");
+
+                if !rows.is_empty() {
+                    println!("\n{:<20} | {:<12} | {:<12} | {:<25} | {:<15} | {:<50}",
+                        "Path", "Status", "Time (ms)", "Checked At", "Method", "Error"
+                    );
+                    println!("{:-<140}", "");
+
+                    for row in rows {
+                        let path: String = row.get("path");
+                        let status: String = row.get("status");
+                        let response_time: Option<i64> = row.get("response_time_ms");
+                        let checked_at: String = row.get("checked_at");
+                        let method_used: String = row.get("method_used");
+                        let error_message: Option<String> = row.get("error_message");
+
+                        let time_str = response_time.map(|t| format!("{}ms", t)).unwrap_or_else(|| "N/A".to_string());
+                        let error_str = error_message.unwrap_or_else(|| "".to_string());
+                        let error_display = if error_str.len() > 50 {
+                            format!("{}...", &error_str[..47])
+                        } else {
+                            error_str
+                        };
+
+                        println!("{:<20} | {:<12} | {:<12} | {:<25} | {:<15} | {:<50}",
+                            path, status, time_str, &checked_at[..19], method_used, error_display
+                        );
+                    }
+                } else {
+                    println!("No health check history available");
+                }
+            } else {
+                // Show current health status for all routes
+                // TODO turn this into a query function in queries.rs
+                let rows = sqlx::query(
+                    "SELECT r.path, r.upstream, r.health_endpoint, 
+                     COALESCE(r.health_check_status, 'Available') as health_check_status,
+                     h.status as last_health_status, h.response_time_ms, h.checked_at, h.method_used
+                     FROM routes r
+                     LEFT JOIN (
+                         SELECT path, status, response_time_ms, checked_at, method_used,
+                                ROW_NUMBER() OVER (PARTITION BY path ORDER BY checked_at DESC) as rn
+                         FROM route_health_checks
+                     ) h ON r.path = h.path AND h.rn = 1
+                     ORDER BY r.path"
+                )
+                .fetch_all(*pool)
+                .await
+                .expect("Failed to fetch route health status");
+
+                if !rows.is_empty() {
+                    println!("\n{:<20} | {:<30} | {:<12} | {:<12} | {:<15} | {:<25} | {:<20}",
+                        "Path", "Upstream", "Status", "Time (ms)", "Method", "Last Checked", "Health Endpoint"
+                    );
+                    println!("{:-<140}", "");
+
+                    for row in rows {
+                        let path: String = row.get("path");
+                        let upstream: String = row.get("upstream");
+                        // TODO do we need this, or do we need to display it?
+                        let health_check_status: String = row.get("health_check_status");
+                        let last_health_status: Option<String> = row.get("last_health_status");
+                        let response_time: Option<i64> = row.get("response_time_ms");
+                        let checked_at: Option<String> = row.get("checked_at");
+                        let method_used: Option<String> = row.get("method_used");
+                        let health_endpoint: Option<String> = row.get("health_endpoint");
+
+                        let status_display = last_health_status.unwrap_or_else(|| "Unknown".to_string());
+                        let time_str = response_time.map(|t| format!("{}ms", t)).unwrap_or_else(|| "N/A".to_string());
+                        let method_str = method_used.unwrap_or_else(|| "N/A".to_string());
+                        let checked_str = checked_at.map(|c| c[..19].to_string()).unwrap_or_else(|| "Never".to_string());
+                        let endpoint_str = health_endpoint.unwrap_or_else(|| "None".to_string());
+
+                        // Filter unhealthy routes if requested
+                        if unhealthy_only && status_display != "Unhealthy" && status_display != "Unavailable" {
+                            continue;
+                        }
+
+                        let upstream_display = if upstream.len() > 30 {
+                            format!("{}...", &upstream[..27])
+                        } else {
+                            upstream
+                        };
+
+                        let endpoint_display = if endpoint_str.len() > 20 {
+                            format!("{}...", &endpoint_str[..17])
+                        } else {
+                            endpoint_str
+                        };
+
+                        println!("{:<20} | {:<30} | {:<12} | {:<12} | {:<15} | {:<25} | {:<20}",
+                            path, upstream_display, status_display, time_str, method_str, checked_str, endpoint_display
+                        );
+                    }
+                } else {
+                    println!("No routes configured");
                 }
             }
         }

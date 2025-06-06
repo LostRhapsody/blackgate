@@ -177,7 +177,7 @@ fn generate_route_form(is_edit: bool, path: &str, form_data: RouteFormData) -> S
     format!(
         r##"
             <h3>{}</h3>
-            <form hx-post="{}" hx-target="#routes-content" hx-swap="outerHTML">
+            <form hx-post="{}" hx-target="#content" hx-swap="innerHTML">
                 <div>
                     <label for="path">Path:</label><br>
                     <input type="text" id="path" name="path" required value="{}" placeholder="/api/example">
@@ -245,6 +245,19 @@ fn generate_route_form(is_edit: bool, path: &str, form_data: RouteFormData) -> S
 ///////////////////////////////////////////////////////////////////////////////
 //****                       Public Functions                            ****//
 ///////////////////////////////////////////////////////////////////////////////
+
+pub async fn dashboard_view(State(state): State<AppState>) -> Html<String> {
+    let html = r##"
+        <h2>Dashboard</h2>
+        <div class="dashboard-container">
+            <div id="dashboard-content">
+                <p>This is your central management dashboard for all API routes and metrics.</p>
+                <p>Use the navigation links to manage routes, view metrics, and configure settings.</p>
+            </div>
+        </div>
+    "##;
+    Html(html.to_string())
+}
 
 pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
     let rows = sqlx::query("SELECT path, upstream, auth_type, rate_limit_per_minute, rate_limit_per_hour FROM routes")

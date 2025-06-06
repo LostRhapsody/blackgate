@@ -6,12 +6,13 @@ pub fn create_routes() -> Router<AppState> {
     Router::new()
         // Root redirects to dashboard
         .route("/", axum::routing::get(|| async { 
-            axum::response::Redirect::permanent("/templates/dashboard.html") 
+            axum::response::Redirect::permanent("/templates/home.html") 
         }))
-        .route("/dashboard", axum::routing::get(|| async { 
-            axum::response::Redirect::permanent("/templates/dashboard.html") 
+        .route("/home", axum::routing::get(|| async { 
+            axum::response::Redirect::permanent("/templates/home.html") 
         }))
         // HTMX dynamic content endpoints
+        .route("/web/dashboard", get(handlers::dashboard_view))
         .route("/web/routes", get(handlers::routes_list))
         .route("/web/routes/add-form", get(handlers::add_route_form))
         .route("/web/routes/auth-fields", get(handlers::auth_fields_form))

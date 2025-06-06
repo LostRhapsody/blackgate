@@ -5,9 +5,9 @@
     <script src="/static/js/htmx.min.js"></script>
     <link rel="stylesheet" href="/static/css/styles.css">
 </head>
-<body>
+<body hx-get="/web/dashboard" hx-target="#content" hx-trigger="load"></body>
     <nav>
-        <a href="/home"><h1>Black Gate API Gateway</h1></a>
+        <h1>Black Gate API Gateway</h1>
         <ul>
             <li><a href="#" hx-get="/web/dashboard" hx-target="#content">Dashboard</a></li>
             <li><a href="#" hx-get="/web/routes" hx-target="#content">Routes</a></li>
@@ -15,8 +15,6 @@
         </ul>
     </nav>
     <main id="content">
-        <h2>Welcome to Black Gate</h2>
-        <p>Use the navigation above to manage routes and view metrics.</p>
     </main>
 </body>
 </html>

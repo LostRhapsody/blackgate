@@ -3,6 +3,10 @@ use serde::Deserialize;
 use sqlx::Row;
 use crate::{AppState, AuthType};
 
+///////////////////////////////////////////////////////////////////////////////
+//****                         Public Structs                            ****//
+///////////////////////////////////////////////////////////////////////////////
+
 #[derive(Deserialize)]
 pub struct MetricsQuery {
     limit: Option<u32>,
@@ -33,6 +37,10 @@ pub struct AddRouteForm {
     rate_limit_per_minute: Option<u32>,
     rate_limit_per_hour: Option<u32>,
 }
+
+///////////////////////////////////////////////////////////////////////////////
+//****                       Public Functions                            ****//
+///////////////////////////////////////////////////////////////////////////////
 
 // Only handle dynamic HTMX responses now
 pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
@@ -80,7 +88,7 @@ pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
                             <td>{}</td>
                             <td>{}</td>
                             <td>
-                                <button hx-get="/web/routes/edit/{}" hx-target="#routes-content" hx-swap="outerHTML">Edit</button>
+                                <button hx-get="/web/routes/edit/{}" hx-target="#routes-content" hx-swap="innerHTML">Edit</button>
                                 <button hx-delete="/web/routes/{}" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Delete this route?">Delete</button>
                             </td>
                         </tr>
@@ -707,4 +715,60 @@ pub async fn edit_route_form(State(state): State<AppState>, Path(path): Path<Str
     "##, allowed_methods, rate_limit_per_minute, rate_limit_per_hour));
 
     Ok(Html(html))
+}
+
+pub async fn edit_route_submit(State(state): State<AppState>, Path(path): Path<String>, Form(form): Form<AddRouteForm>) -> Result<Html<String>, StatusCode> {
+    // Parse the auth type
+    let auth_type_enum = AuthType::from_str(&form.auth_type);
+    
+    // Update the route in the database using the path from URL parameter
+    let result = sqlx::query(
+        "UPDATE routes SET 
+        path = ?, upstream = ?, auth_type = ?, auth_value = ?, allowed_methods = ?, 
+        oauth_token_url = ?, oauth_client_id = ?, oauth_client_secret = ?, oauth_scope = ?,
+        jwt_secret = ?, jwt_algorithm = ?, jwt_issuer = ?, jwt_audience = ?, jwt_required_claims = ?,
+        oidc_issuer = ?, oidc_client_id = ?, oidc_client_secret = ?, oidc_audience = ?, oidc_scope = ?,
+        rate_limit_per_minute = ?, rate_limit_per_hour = ?
+        WHERE path = ?"
+    )
+    .bind(&form.path)
+    .bind(&form.upstream)
+    .bind(auth_type_enum.to_string())
+    .bind(form.auth_value.unwrap_or_default())
+    .bind(form.allowed_methods.unwrap_or_default())
+    .bind(form.oauth_token_url.unwrap_or_default())
+    .bind(form.oauth_client_id.unwrap_or_default())
+    .bind(form.oauth_client_secret.unwrap_or_default())
+    .bind(form.oauth_scope.unwrap_or_default())
+    .bind(form.jwt_secret.unwrap_or_default())
+    .bind(form.jwt_algorithm.unwrap_or_else(|| "HS256".to_string()))
+    .bind(form.jwt_issuer.unwrap_or_default())
+    .bind(form.jwt_audience.unwrap_or_default())
+    .bind(form.jwt_required_claims.unwrap_or_default())
+    .bind(form.oidc_issuer.unwrap_or_default())
+    .bind(form.oidc_client_id.unwrap_or_default())
+    .bind(form.oidc_client_secret.unwrap_or_default())
+    .bind(form.oidc_audience.unwrap_or_default())
+    .bind(form.oidc_scope.unwrap_or_default())
+    .bind(form.rate_limit_per_minute.unwrap_or(60))
+    .bind(form.rate_limit_per_hour.unwrap_or(1000))
+    .bind(&path) // WHERE clause - original path from URL parameter
+    .execute(&state.db)
+    .await;
+
+    match result {
+        Ok(result) => {
+            if result.rows_affected() == 0 {
+                // No rows were updated, route not found
+                Err(StatusCode::NOT_FOUND)
+            } else {
+                // Return the updated routes list
+                Ok(routes_list(State(state)).await)
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to update route: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }

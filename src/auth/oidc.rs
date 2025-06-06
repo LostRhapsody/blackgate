@@ -54,6 +54,13 @@ pub struct OidcConfig {
     issuer_url: Option<String>,
 }
 
+impl OidcConfig {
+    /// Get the issuer URL
+    pub fn issuer(&self) -> &str {
+        &self.issuer
+    }
+}
+
 /// OIDC Discovery Document structure
 #[derive(Debug, Deserialize)]
 pub struct OidcDiscoveryDocument {

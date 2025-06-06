@@ -8,7 +8,7 @@
 //! - **API Key**: Simple header-based authentication using a pre-configured API key
 //! - **OAuth 2.0**: Client credentials flow with automatic token caching and refresh
 //! - **JWT**: JSON Web Token validation with configurable signing algorithms
-//! - **OIDC**: OpenID Connect authentication (implementation pending)
+//! - **OIDC**: OpenID Connect authentication with token introspection and discovery
 //! - **None**: No authentication required
 //! 
 //! ## Features
@@ -42,6 +42,7 @@ use std::sync::{Arc, Mutex};
 use crate::routing::handlers::RouteConfig;
 use oauth::{get_oauth_token, OAuthTokenCache};
 use jwt::{create_jwt_config, validate_jwt_token};
+use oidc::{create_oidc_config, fetch_oidc_discovery, validate_oidc_token};
 use types::AuthType;
 use tracing::{debug, error, info, warn};
 
@@ -172,12 +173,61 @@ pub async fn apply_authentication(
                 debug!("No JWT token provided for route {}, forwarding request without token", path);
                 Ok(builder)
             }
-        }
+        }        
         AuthType::Oidc => {
-            // OIDC authentication logic would go here
             debug!("Using OIDC authentication for route {}", path);
-            // For now, just return the builder without modification
-            Ok(builder)
+            
+            // Create OIDC configuration from route config
+            let oidc_config = match create_oidc_config(route_config) {
+                Ok(config) => config,
+                Err(e) => {
+                    error!("Invalid OIDC configuration for route {}: {}", path, e);
+                    return Err(axum::response::Response::builder()
+                        .status(500)
+                        .body(axum::body::Body::from(format!("OIDC configuration error: {}", e)))
+                        .unwrap());
+                }
+            };
+
+            // TODO - update this to extract the OIDC token from headers or query params
+            if let Some(auth_value) = &route_config.auth_value {
+                // If auth_value contains an OIDC token, validate it
+                let token = if auth_value.starts_with("Bearer ") {
+                    &auth_value[7..] // Remove "Bearer " prefix
+                } else {
+                    auth_value // Assume it's the raw token
+                };                // Fetch discovery document
+                let discovery = match fetch_oidc_discovery(oidc_config.issuer()).await {
+                    Ok(doc) => doc,
+                    Err(e) => {
+                        error!("Failed to fetch OIDC discovery document for route {}: {}", path, e);
+                        return Err(axum::response::Response::builder()
+                            .status(500)
+                            .body(axum::body::Body::from("OIDC discovery failed"))
+                            .unwrap());
+                    }
+                };
+
+                // Validate the token
+                match validate_oidc_token(token, &oidc_config, &discovery).await {
+                    Ok(()) => {
+                        debug!("OIDC token validated successfully for route {}", path);
+                        // Forward the original token
+                        Ok(builder.header("Authorization", auth_value))
+                    }
+                    Err(e) => {
+                        warn!("OIDC token validation failed for route {}: {}", path, e);
+                        Err(axum::response::Response::builder()
+                            .status(401)
+                            .body(axum::body::Body::from("Invalid OIDC token"))
+                            .unwrap())
+                    }
+                }
+            } else {
+                // No token provided - this might be acceptable if OIDC validation happens upstream
+                debug!("No OIDC token provided for route {}, forwarding request without token", path);
+                Ok(builder)
+            }
         }
         AuthType::None => {
             debug!("No authentication required for route {}", path);

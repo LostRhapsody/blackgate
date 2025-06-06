@@ -26,12 +26,8 @@ Current Progress: 15%
 
 ## Current WIP Feature
 
-**OIDC Authentication**
-Status: Fields have been added to structs, commands, fields, and inputs. Partial logic and functions have been implemented, but not tested or validated, just scaffolded.
-Next step: More OIDC research and implementation planning and testing. Claude Sonnet 4 couldn't handle this one entirely solo. 
-
 **Update JWT Extraction Logic**
-Status: The token itself for JWT authentication is expected to be stored in the route record in the current implementation. In a production scenario, it's more likely the token will come from the client... to make this make a bit more sense, we may update it to do that instead. A bit more research is required.
+Status: The token itself for JWT authentication is expected to be stored in the route record in the current implementation. In a production scenario, it's more likely the token will come from the client... to make this make a bit more sense, we may update it to do that instead. A bit more research is required. **OIDC needs the same update**
 
 **Database Module Updates**
 The database module has been introduced to simplify calling the database and retrieving data. It still needs some more updates, and current locations in code need to be refactored to fetch using it instead of sqlx as well. Keeps all our queries and database logic organized.
@@ -242,6 +238,34 @@ curl http://localhost:3000/test  # 429 Too Many Requests
   "error": "Rate limit exceeded. Try again later."
 }
 ```
+
+## Authentication Information
+
+This section outlines some info about how the different authentication schemes are implemented.
+
+### OIDC (Needs Testing)
+
+This section is more for contributors, as I don't really know how OIDC works and this was added mostly by Claude.
+
+🔧 Implementation Details
+
+The OIDC authentication now works as follows:
+
+* Configuration: Creates OIDC config from route settings (issuer, client_id, client_secret, etc.)
+* Discovery: Fetches the OpenID Connect discovery document from {issuer}/.well-known/openid_configuration
+* Token Validation:
+  * First tries token introspection if available
+  * Validates audience if configured
+  * Falls back to simplified JWT validation if introspection fails
+* Request Forwarding: Forwards the validated token in the Authorization header
+
+🚀 Features Supported
+
+* Multiple validation methods: Token introspection (primary) + JWT validation (fallback)
+* Audience verification: Validates token audience against configured value
+* Flexible token format: Accepts both Bearer {token} and raw token formats
+* Comprehensive error handling: Proper HTTP status codes and error messages
+* Structured logging: Debug/info/warn logs for monitoring and troubleshooting
 
 ## Tests
 Additional tests 

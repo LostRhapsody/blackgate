@@ -54,7 +54,6 @@ async fn main() {
 
     info!("Starting Black Gate API Gateway");
 
-    // Initialize SQLite database with migrations for other commands
     let pool = initialize_database("sqlite://blackgate.db")
         .await
         .expect("Failed to initialize database");

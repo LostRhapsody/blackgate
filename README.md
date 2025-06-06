@@ -8,18 +8,20 @@ The Black Gate Project, or Black Gate for short, is an open source API Gateway.
 
 The goal is simple: A rust server that handles common API tasks such as managing routes, upstreams, authentication, authorization, metrics, logging, and documentation, controlled through a CLI or Web User Interface.
 
-Current Progress: 10%
+Current Progress: 15%
 
 ## Features
 - Authentication
 - Store paths and their upstreams in a database
 - Add, remove, and list routes via the CLI
-- Add, remove, and list routes via the Web UI
+- Add, remove, edit and list routes via the Web UI
 - Test Coverage
 - oAuth test server for testing oAuth Client Credential flows
 - HTTP Method Validation per-path
-- Detailed metrics for each request via the CLI and Web
+- Detailed metrics for each request via the CLI and Web UI
+- A convienient dashboard page for the Web UI
 - Rate Limiting - Configurable per-minute and per-hour rate limits for each route
+- Database schema migrations, mostly for developers on The Black Gate Project, useful for customized forks as well
 - Dockerfile included for containerization to self-host
 
 ## Current WIP Feature
@@ -28,6 +30,11 @@ Current Progress: 10%
 Status: Fields have been added to structs, commands, fields, and inputs. Partial logic and functions have been implemented, but not tested or validated, just scaffolded.
 Next step: More OIDC research and implementation planning and testing. Claude Sonnet 4 couldn't handle this one entirely solo. 
 
+**Update JWT Extraction Logic**
+Status: The token itself for JWT authentication is expected to be stored in the route record in the current implementation. In a production scenario, it's more likely the token will come from the client... to make this make a bit more sense, we may update it to do that instead. A bit more research is required.
+
+**Database Module Updates**
+The database module has been introduced to simplify calling the database and retrieving data. It still needs some more updates, and current locations in code need to be refactored to fetch using it instead of sqlx as well. Keeps all our queries and database logic organized.
 
 **Sections with detailed information on features below**
 
@@ -68,7 +75,7 @@ $ curl -X POST http://localhost:3000/warehouse -d '{"payload": "test"}' -H "Cont
 - OIDC Authentication
 - Tenant based Authorization (Restrict routes and actions based on the client we recceive the request from)
 - Enhanced rate limiting features (IP-based limiting, custom time windows)
-- Enhanced web UI
+- Enhanced web UI (Mostly complete, will just be enhanced with new features as we go, maybe more modern styles, low-priority)
 - API Composition - aggregate data from multiple services into a single response, simplifying client-side logic
 - Protocol translation - bridge the gap between HTTP, WebSocket, gRPC, etc, simplifying client-side logic
 - Data transloation - convert requests and responses to and from JSON and XML (and other common syntaxes for data representation)

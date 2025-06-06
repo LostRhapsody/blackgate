@@ -3,8 +3,6 @@ use serde::Deserialize;
 use sqlx::Row;
 use crate::{AppState, AuthType};
 
-// todo new bug, when saving a route, either add or edit, it re-adds the "Routes Add Route" header/button
-
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Public Structs                            ****//
 ///////////////////////////////////////////////////////////////////////////////

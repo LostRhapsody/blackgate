@@ -72,6 +72,7 @@ use crate::auth::types::AuthType;
 use crate::database::{
     DatabaseManager,
     MigrationCli,
+    queries,
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -234,35 +235,32 @@ pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
                     None => AuthType::None,
                 };
     
-                sqlx::query(
-                    "INSERT OR REPLACE INTO routes
-                (path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, rate_limit_per_minute, rate_limit_per_hour, oidc_issuer, oidc_client_id, oidc_client_secret, oidc_audience, oidc_scope)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                queries::insert_or_replace_route(
+                    *pool,
+                    &path,
+                    &upstream,
+                    &auth_type_enum,
+                    &auth_value.unwrap_or_else(|| "".into()),
+                    &allowed_methods.unwrap_or_else(|| "".into()),
+                    &oauth_token_url.unwrap_or_else(|| "".into()),
+                    &oauth_client_id.unwrap_or_else(|| "".into()),
+                    &oauth_client_secret.unwrap_or_else(|| "".into()),
+                    &oauth_scope.unwrap_or_else(|| "".into()),
+                    &jwt_secret.unwrap_or_else(|| "".into()),
+                    &jwt_algorithm.unwrap_or_else(|| "HS256".into()),
+                    &jwt_issuer.unwrap_or_else(|| "".into()),
+                    &jwt_audience.unwrap_or_else(|| "".into()),
+                    &jwt_required_claims.unwrap_or_else(|| "".into()),
+                    rate_limit_per_minute.unwrap_or(60),
+                    rate_limit_per_hour.unwrap_or(1000),
+                    &oidc_issuer.unwrap_or_else(|| "".into()),
+                    &oidc_client_id.unwrap_or_else(|| "".into()),
+                    &oidc_client_secret.unwrap_or_else(|| "".into()),
+                    &oidc_audience.unwrap_or_else(|| "".into()),
+                    &oidc_scope.unwrap_or_else(|| "".into()),
                 )
-                    .bind(path.clone())
-                    .bind(upstream.clone())
-                    .bind(auth_type_enum.to_string())
-                    .bind(auth_value.unwrap_or_else(|| "".into()))
-                    .bind(allowed_methods.unwrap_or_else(|| "".into()))
-                    .bind(oauth_token_url.unwrap_or_else(|| "".into()))
-                    .bind(oauth_client_id.unwrap_or_else(|| "".into()))
-                    .bind(oauth_client_secret.unwrap_or_else(|| "".into()))
-                    .bind(oauth_scope.unwrap_or_else(|| "".into()))
-                    .bind(jwt_secret.unwrap_or_else(|| "".into()))
-                    .bind(jwt_algorithm.unwrap_or_else(|| "HS256".into()))
-                    .bind(jwt_issuer.unwrap_or_else(|| "".into()))
-                    .bind(jwt_audience.unwrap_or_else(|| "".into()))
-                    .bind(jwt_required_claims.unwrap_or_else(|| "".into()))
-                    .bind(rate_limit_per_minute.unwrap_or(60))
-                    .bind(rate_limit_per_hour.unwrap_or(1000))
-                    .bind(oidc_issuer.unwrap_or_else(|| "".into()))
-                    .bind(oidc_client_id.unwrap_or_else(|| "".into()))
-                    .bind(oidc_client_secret.unwrap_or_else(|| "".into()))
-                    .bind(oidc_audience.unwrap_or_else(|| "".into()))
-                    .bind(oidc_scope.unwrap_or_else(|| "".into()))
-                    .execute(*pool)
-                    .await
-                    .expect("Failed to add route");
+                .await
+                .expect("Failed to add route");
     
                 // Print OAuth details if this is OAuth authentication
                 println!("Added route: {} -> {} with {} authentication",
@@ -271,16 +269,13 @@ pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
             }
         Commands::RemoveRoute { path } => {
                 let path_copy = path.clone();
-                sqlx::query("DELETE FROM routes WHERE path = ?")
-                    .bind(path)
-                    .execute(*pool)
+                queries::delete_route_by_path(*pool, &path)
                     .await
                     .expect("Failed to remove route");
                 println!("Removed route: {}", path_copy);
             }
         Commands::ListRoutes => {
-                let rows = sqlx::query("SELECT path, upstream, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, rate_limit_per_minute, rate_limit_per_hour FROM routes")
-                    .fetch_all(*pool)
+                let rows = queries::fetch_all_routes_for_listing(*pool)
                     .await
                     .expect("Failed to list routes");
     
@@ -313,22 +308,9 @@ pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
         Commands::Metrics { limit, stats } => {
                 if stats {
                     // Show statistics summary
-                    let stats_query = sqlx::query(
-                        "SELECT
-                        COUNT(*) as total_requests,
-                        AVG(duration_ms) as avg_duration_ms,
-                        MIN(duration_ms) as min_duration_ms,
-                        MAX(duration_ms) as max_duration_ms,
-                        COUNT(CASE WHEN response_status_code >= 200 AND response_status_code < 300 THEN 1 END) as success_count,
-                        COUNT(CASE WHEN response_status_code >= 400 THEN 1 END) as error_count,
-                        SUM(request_size_bytes) as total_request_bytes,
-                        SUM(response_size_bytes) as total_response_bytes
-                    FROM request_metrics
-                    WHERE response_timestamp IS NOT NULL"
-                    )
-                    .fetch_optional(*pool)
-                    .await
-                    .expect("Failed to fetch metrics statistics");
+                    let stats_query = queries::fetch_metrics_statistics(*pool)
+                        .await
+                        .expect("Failed to fetch metrics statistics");
     
                     if let Some(row) = stats_query {
                         println!("\n=== Request Metrics Summary ===");
@@ -348,17 +330,9 @@ pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
     
                 // Show recent requests
                 let limit_value = limit.unwrap_or(10);
-                let rows = sqlx::query(
-                    "SELECT id, path, method, request_timestamp, duration_ms, response_status_code,
-                        request_size_bytes, response_size_bytes, upstream_url, auth_type, error_message
-                 FROM request_metrics
-                 ORDER BY request_timestamp DESC
-                 LIMIT ?"
-                )
-                .bind(limit_value)
-                .fetch_all(*pool)
-                .await
-                .expect("Failed to fetch recent metrics");
+                let rows = queries::fetch_recent_request_metrics(*pool, limit_value)
+                    .await
+                    .expect("Failed to fetch recent metrics");
     
                 if !rows.is_empty() {
                     println!("\n=== Recent Requests (Last {}) ===", limit_value);

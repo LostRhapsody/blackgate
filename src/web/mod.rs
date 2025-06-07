@@ -1,5 +1,7 @@
 pub mod handlers;
 pub mod routes;
+pub mod forms;
+pub mod views;
 
 use axum::Router;
 use tower_http::services::ServeDir;

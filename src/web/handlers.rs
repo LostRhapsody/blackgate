@@ -1,6 +1,7 @@
 use axum::{response::Html, extract::{State, Form, Path, Query}, http::StatusCode};
 use serde::Deserialize;
 use sqlx::Row;
+use tracing::info;
 use crate::{AppState, AuthType, database::queries};
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -454,10 +455,11 @@ pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
                             <td>{}</td>
                             <td>
                                 <button hx-get="/web/routes/edit/{}" hx-target="#routes-content" hx-swap="innerHTML">Edit</button>
+                                <button hx-post="/web/routes/clear-health/{}" hx-target="#content" hx-swap="innerHTML" hx-confirm="Clear health status for this route?">Clear Health</button>
                                 <button hx-delete="/web/routes/{}" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Delete this route?">Delete</button>
                             </td>
                         </tr>
-            "##, health_indicator, path, upstream, auth_type.to_display_string(), rate_min, rate_hour, health_status, path, path));
+            "##, health_indicator, path, upstream, auth_type.to_display_string(), rate_min, rate_hour, health_status, path, path, path));
         }
 
         html.push_str("</tbody></table>");
@@ -797,6 +799,19 @@ pub async fn edit_route_submit(State(state): State<AppState>, Path(path): Path<S
         }
         Err(e) => {
             eprintln!("Failed to update route: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn clear_route_health_status(State(state): State<AppState>, Path(path): Path<String>) -> Result<Html<String>, StatusCode> {
+    let result = queries::clear_route_health_status(&state.db, &path)
+        .await;
+
+    match result {
+        Ok(_) => Ok(routes_list(State(state)).await),
+        Err(e) => {
+            eprintln!("Failed to clear health status for route: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }

@@ -5,7 +5,7 @@ use crate::AppState;
 pub fn create_routes() -> Router<AppState> {
     Router::new()
         // Root redirects to dashboard
-        .route("/", axum::routing::get(|| async { 
+        .route("/", axum::routing::get(|| async {
             axum::response::Redirect::permanent("/templates/home.html")
         }))
         // HTMX dynamic content endpoints
@@ -17,5 +17,6 @@ pub fn create_routes() -> Router<AppState> {
         .route("/web/routes/edit/{*path}", get(handlers::edit_route_form))
         .route("/web/routes/edit/{*path}", post(handlers::edit_route_submit))
         .route("/web/routes/{*path}", delete(handlers::delete_route))
+        .route("/web/routes/clear-health/{*path}", post(handlers::clear_route_health_status))
         .route("/web/metrics", get(handlers::metrics_view))
 }

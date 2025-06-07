@@ -11,6 +11,7 @@
 //! - **General Queries**: Utility queries for counts and other operations
 
 use sqlx::{sqlite::SqlitePool, Row};
+use tracing::info;
 use crate::auth::types::AuthType;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -98,8 +99,8 @@ pub async fn fetch_routes_basic_info(
     pool: &SqlitePool,
 ) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
     sqlx::query(
-        "SELECT r.path, r.upstream, r.auth_type, r.rate_limit_per_minute, r.rate_limit_per_hour,
-         COALESCE(h.status, 'Unknown') as health_status
+        "SELECT r.path, r.upstream, r.auth_type, r.rate_limit_per_minute, r.rate_limit_per_hour, r.health_check_status,
+                COALESCE(h.status, 'Unknown') as health_status
          FROM routes r
          LEFT JOIN (
              SELECT path, status,
@@ -329,4 +330,65 @@ pub async fn store_request_metrics(
     .bind(error_message)
     .execute(pool)
     .await
+}
+
+/// Clear health status for a route by setting it to "Unknown"
+pub async fn clear_route_health_status(
+    pool: &SqlitePool,
+    path: &str,
+) -> Result<(), sqlx::Error> {
+    // Start a transaction to update both tables atomically
+    let mut tx = pool.begin().await?;
+
+    info!("Clearing health status for route: {}", path);
+    // Reset the health_check_status on the routes table to 'Available'
+    sqlx::query(
+        "UPDATE routes SET health_check_status = 'Unknown', status = 'Unknown'
+        WHERE path = ?"
+    )
+        .bind(path)
+        .execute(&mut *tx)
+        .await?;
+
+    // Fetch the updated route to verify the changes
+    sqlx::query(
+        "SELECT path, health_check_status, status FROM routes WHERE path = ?"
+    )
+    .bind(path)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    // check if it exists
+    let route_health_checks = sqlx::query(
+        "SELECT path, status, status FROM route_health_checks WHERE path = ?"
+    )
+    .bind(path)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    if let Some(row) = route_health_checks {
+        // update the existing health check record
+        sqlx::query(
+            "UPDATE route_health_checks SET status = 'Unknown', checked_at = datetime('now'), method_used = 'manual'
+            WHERE path = ?"
+        )
+        .bind(path)
+        .execute(&mut *tx)
+        .await?;
+    } else {
+        // Insert a new health check record with 'Unknown' status
+        sqlx::query(
+            "INSERT INTO route_health_checks (path, status, checked_at, method_used)
+            VALUES (?, 'Unknown', datetime('now'), 'manual')"
+        )
+        .bind(path)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    // Commit the transaction
+    tx.commit().await?;
+
+    // Return a dummy result since we can't return the transaction result
+    Ok(())
 }

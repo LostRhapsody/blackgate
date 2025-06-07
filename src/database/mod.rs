@@ -182,6 +182,23 @@ impl DatabaseManager {
                     );
                 "#.to_string(),
             },
+            Migration {
+                version: 9,
+                name: "make_path_primary_key_in_route_health_checks".to_string(),
+                sql: r#"
+                    CREATE TABLE IF NOT EXISTS route_health_checks_temp (
+                        path TEXT PRIMARY KEY,
+                        status TEXT NOT NULL,
+                        response_time_ms INTEGER,
+                        error_message TEXT,
+                        checked_at TEXT NOT NULL,
+                        method_used TEXT NOT NULL
+                    );
+                    INSERT INTO route_health_checks_temp SELECT * FROM route_health_checks;
+                    DROP TABLE route_health_checks;
+                    ALTER TABLE route_health_checks_temp RENAME TO route_health_checks;
+                "#.to_string(),
+            },
         ]
     }
 

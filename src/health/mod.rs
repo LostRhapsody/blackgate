@@ -70,6 +70,7 @@ pub enum HealthCheckMethod {
     HealthEndpoint,
     HeadRequest,
     Skipped,
+    Manual,
 }
 
 impl HealthCheckMethod {
@@ -78,6 +79,7 @@ impl HealthCheckMethod {
             HealthCheckMethod::HealthEndpoint => "health_endpoint".to_string(),
             HealthCheckMethod::HeadRequest => "head_request".to_string(),
             HealthCheckMethod::Skipped => "skipped".to_string(),
+            HealthCheckMethod::Manual => "manual".to_string(),
         }
     }
 }
@@ -126,17 +128,17 @@ impl HealthChecker {
     /// This function spawns a tokio task that runs indefinitely
     pub fn start_background_checks(self) {
         let checker = Arc::new(self);
-        
+
         tokio::spawn(async move {
             info!("Starting health check background task with {} second intervals", checker.check_interval_seconds);
-            
+
             let mut interval = time::interval(Duration::from_secs(checker.check_interval_seconds));
-            
+
             loop {
                 interval.tick().await;
-                
+
                 debug!("Running periodic health checks");
-                
+
                 if let Err(e) = checker.run_health_checks().await {
                     error!("Health check cycle failed: {}", e);
                 }
@@ -148,7 +150,7 @@ impl HealthChecker {
     async fn run_health_checks(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Fetch all routes that need health checking
         let routes = self.fetch_routes_for_health_check().await?;
-        
+
         if routes.is_empty() {
             debug!("No routes found for health checking");
             return Ok(());
@@ -159,14 +161,14 @@ impl HealthChecker {
         // Check each route
         for route in routes {
             let result = self.check_route_health(&route).await;
-            
+
             match result {
                 Ok(health_result) => {
                     // Store the health check result in database
                     if let Err(e) = self.store_health_result(&health_result).await {
                         error!("Failed to store health result for route {}: {}", health_result.path, e);
                     }
-                    
+
                     info!(
                         "Health check for {} completed: {} ({}ms, method: {})",
                         health_result.path,
@@ -187,11 +189,11 @@ impl HealthChecker {
     /// Check the health of a single route
     async fn check_route_health(&self, route: &RouteHealthInfo) -> Result<HealthCheckResult, Box<dyn std::error::Error + Send + Sync>> {
         let start_time = std::time::Instant::now();
-        
+
         // First, try the dedicated health endpoint if available
         if let Some(health_endpoint) = &route.health_endpoint {
             debug!("Checking health endpoint for route {}: {}", route.path, health_endpoint);
-            
+
             match self.check_health_endpoint(health_endpoint).await {
                 Ok(status) => {
                     let response_time = start_time.elapsed().as_millis() as u64;
@@ -213,7 +215,7 @@ impl HealthChecker {
         // Fallback to HEAD request if health endpoint is not available or failed
         if route.health_check_status != HealthStatus::Unavailable {
             debug!("Checking upstream with HEAD request for route {}: {}", route.path, route.upstream);
-            
+
             match self.check_with_head_request(&route.upstream).await {
                 Ok(status) => {
                     let response_time = start_time.elapsed().as_millis() as u64;
@@ -230,12 +232,12 @@ impl HealthChecker {
                     // Check if this is a 405 Method Not Allowed error
                     if e.to_string().contains("405") || e.to_string().contains("Method Not Allowed") {
                         warn!("HEAD method not allowed for route {}, marking as unavailable", route.path);
-                        
+
                         // Update the route to mark health checking as unavailable
                         if let Err(update_err) = self.mark_route_health_unavailable(&route.path).await {
                             error!("Failed to update route health status: {}", update_err);
                         }
-                        
+
                         let response_time = start_time.elapsed().as_millis() as u64;
                         Ok(HealthCheckResult {
                             path: route.path.clone(),
@@ -324,8 +326,8 @@ impl HealthChecker {
     /// Fetch all routes that need health checking
     async fn fetch_routes_for_health_check(&self) -> Result<Vec<RouteHealthInfo>, sqlx::Error> {
         let rows = sqlx::query(
-            "SELECT path, upstream, health_endpoint, 
-             COALESCE(health_check_status, 'Available') as health_check_status 
+            "SELECT path, upstream, health_endpoint,
+             COALESCE(health_check_status, 'Available') as health_check_status
              FROM routes"
         )
         .fetch_all(self.db_pool.as_ref())
@@ -347,7 +349,7 @@ impl HealthChecker {
     /// Store health check result in the database
     async fn store_health_result(&self, result: &HealthCheckResult) -> Result<(), sqlx::Error> {
         sqlx::query(
-            "INSERT OR REPLACE INTO route_health_checks 
+            "INSERT OR REPLACE INTO route_health_checks
              (path, status, response_time_ms, error_message, checked_at, method_used)
              VALUES (?, ?, ?, ?, ?, ?)"
         )

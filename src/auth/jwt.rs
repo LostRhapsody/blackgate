@@ -2,7 +2,7 @@
 //!
 //! This module provides JWT token validation and configuration
 //! for the Blackgate API gateway.
-//! 
+//!
 //! # Supported Features
 //!
 //! - **Algorithms**: HS256, HS384, HS512 (HMAC-based symmetric key algorithms)
@@ -36,7 +36,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use crate::routing::handlers::RouteConfig;
-use tracing::debug;
+use tracing::{debug,info};
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Public Structs                            ****//
@@ -102,10 +102,14 @@ pub fn validate_jwt_token(
     let token_data = decode::<JwtClaims>(token, &decoding_key, &validation)?;
     let claims = token_data.claims;
 
+    let check_claims = jwt_config.required_claims.len() > 0 && jwt_config.required_claims[0] != "";
+
     // Validate required claims if specified
-    for required_claim in &jwt_config.required_claims {
-        if !claims.custom.contains_key(required_claim) {
-            return Err(format!("Missing required claim: {}", required_claim).into());
+    if check_claims {
+        for required_claim in &jwt_config.required_claims {
+            if !claims.custom.contains_key(required_claim) {
+                return Err(format!("Missing required claim: {}", required_claim).into());
+            }
         }
     }
 
@@ -149,6 +153,8 @@ mod tests {
     use jsonwebtoken::{encode, Header, EncodingKey, Algorithm};
     use std::collections::HashMap;
     use serde_json;
+    use assert_cmd::Command;
+    use tokio::runtime::Runtime;
 
     // Helper function to create a test JWT token
     fn create_test_jwt(
@@ -478,5 +484,93 @@ mod tests {
 
         let result = validate_jwt_token(&token, &config);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_sending_jwt_request_no_claim(){
+        let secret = "test_secret";
+        let token = create_test_jwt(secret, Algorithm::HS256, None, None, None);
+
+        let config = JwtConfig {
+            secret: secret.to_string(),
+            algorithm: Algorithm::HS256,
+            issuer: None,
+            audience: None,
+            required_claims: vec![],
+        };
+
+        let result = validate_jwt_token(&token, &config);
+        assert!(result.is_ok());
+
+        let mut cmd = Command::cargo_bin("blackgate").unwrap();
+        cmd.arg("add-route")
+            .arg("--path").arg("/jwt_test")
+            .arg("--upstream").arg("http://localhost:9999")
+            .arg("--auth-type").arg("jwt")
+            .arg("--jwt-secret").arg(secret)
+            .arg("--jwt-algorithm").arg("HS256")
+            .arg("--allowed-methods").arg("POST");
+        let _ = cmd.output();
+
+        // Start test upstream server
+        let rt = Runtime::new().unwrap();
+        let client = reqwest::Client::new();
+        // Attach the JWT token to the Authorization header as a Bearer token
+        let builder = client.request(reqwest::Method::POST, "http://localhost:3000/jwt_test")
+            .bearer_auth(&token)
+            .json(&serde_json::json!({"payload": "hello"}));
+        let res = rt.block_on(builder.send());
+        let res = res.unwrap();
+        info!("Response status: {}", res.status());
+        assert!(res.status() != 401);
+        info!("Response text: {} ", rt.block_on(res.text()).unwrap());
+    }
+
+    #[test]
+    fn test_sending_jwt_request_with_claim(){
+        let secret = "test_secret";
+        let mut custom_claims = HashMap::new();
+        custom_claims.insert("role".to_string(), serde_json::Value::String("admin".to_string()));
+
+        let token = create_test_jwt(secret, Algorithm::HS256, None, None, Some(custom_claims));
+
+        let config = JwtConfig {
+            secret: secret.to_string(),
+            algorithm: Algorithm::HS256,
+            issuer: None,
+            audience: None,
+            required_claims: vec!["role".to_string()],
+        };
+
+        let result = validate_jwt_token(&token, &config);
+        assert!(result.is_ok());
+
+        let mut cmd = Command::cargo_bin("blackgate").unwrap();
+        cmd.arg("add-route")
+            .arg("--path").arg("/jwt_test")
+            .arg("--upstream").arg("http://localhost:9999")
+            .arg("--auth-type").arg("jwt")
+            .arg("--jwt-secret").arg(secret)
+            .arg("--jwt-algorithm").arg("HS256")
+            .arg("--jwt-required-claims").arg("role")
+            .arg("--allowed-methods").arg("POST");
+        let _ = cmd.output();
+
+        // Start test upstream server
+        let rt = Runtime::new().unwrap();
+        let client = reqwest::Client::new();
+        // Attach the JWT token to the Authorization header as a Bearer token
+        let builder = client.request(reqwest::Method::POST, "http://localhost:3000/jwt_test")
+            .bearer_auth(&token)
+            .json(&serde_json::json!({"payload": "hello"}));
+        let res = rt.block_on(builder.send());
+        let res = res.unwrap();
+        info!("Response status: {}", res.status());
+        assert!(res.status() != 401);
+        info!("Response text: {} ", rt.block_on(res.text()).unwrap());
+
+        cmd.arg("remove-route")
+            .arg("/jwt_test");
+        let _ = cmd.output();
     }
 }

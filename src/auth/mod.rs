@@ -1,31 +1,31 @@
 //! # Authentication Module
-//! 
+//!
 //! This module provides authentication functionality for HTTP requests in the blackgate application.
 //! It supports multiple authentication types including API keys, OAuth 2.0, JWT tokens, and OpenID Connect (OIDC).
-//! 
+//!
 //! ## Supported Authentication Types
-//! 
+//!
 //! - **API Key**: Simple header-based authentication using a pre-configured API key
 //! - **OAuth 2.0**: Client credentials flow with automatic token caching and refresh
 //! - **JWT**: JSON Web Token validation with configurable signing algorithms
 //! - **OIDC**: OpenID Connect authentication with token introspection and discovery
 //! - **None**: No authentication required
-//! 
+//!
 //! ## Features
-//! 
+//!
 //! - Thread-safe OAuth token caching to minimize redundant token requests
 //! - Configurable JWT validation with support for various signing algorithms
 //! - Comprehensive error handling with appropriate HTTP status codes
 //! - Structured logging for authentication events and errors
-//! 
+//!
 //! ## Usage
-//! 
+//!
 //! The main entry point is the `apply_authentication` function, which takes a request builder
 //! and route configuration, then applies the appropriate authentication method based on the
 //! configured authentication type.
-//! 
+//!
 //! ## Sub-modules
-//! 
+//!
 //! - `types`: Authentication type definitions and enums
 //! - `oauth`: OAuth 2.0 client credentials implementation with token caching
 //! - `jwt`: JWT token creation, validation, and configuration
@@ -134,7 +134,8 @@ pub async fn apply_authentication(
                     .body(axum::body::Body::from("OAuth configuration is incomplete"))
                     .unwrap())
             }
-        }        AuthType::Jwt => {
+        }
+        AuthType::Jwt => {
             debug!("Using JWT authentication for route {}", path);
 
             // Create JWT configuration from route config
@@ -179,9 +180,10 @@ pub async fn apply_authentication(
                     .body(axum::body::Body::from("Authorization header required"))
                     .unwrap())
             }
-        }        AuthType::Oidc => {
+        }
+        AuthType::Oidc => {
             debug!("Using OIDC authentication for route {}", path);
-            
+
             // Create OIDC configuration from route config
             let oidc_config = match create_oidc_config(route_config) {
                 Ok(config) => config,

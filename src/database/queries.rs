@@ -366,7 +366,7 @@ pub async fn clear_route_health_status(
     .fetch_optional(&mut *tx)
     .await?;
 
-    if let Some(row) = route_health_checks {
+    if let Some(_row) = route_health_checks {
         // update the existing health check record
         sqlx::query(
             "UPDATE route_health_checks SET status = 'Unknown', checked_at = datetime('now'), method_used = 'manual'

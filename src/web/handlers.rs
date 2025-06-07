@@ -1,7 +1,6 @@
 use axum::{response::Html, extract::{State, Form, Path, Query}, http::StatusCode};
 use serde::Deserialize;
 use sqlx::Row;
-use tracing::info;
 use crate::{AppState, AuthType, database::queries};
 
 ///////////////////////////////////////////////////////////////////////////////

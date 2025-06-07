@@ -498,8 +498,6 @@ pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
                     for row in rows {
                         let path: String = row.get("path");
                         let upstream: String = row.get("upstream");
-                        // TODO do we need this, or do we need to display it?
-                        let health_check_status: String = row.get("health_check_status");
                         let last_health_status: Option<String> = row.get("last_health_status");
                         let response_time: Option<i64> = row.get("response_time_ms");
                         let checked_at: Option<String> = row.get("checked_at");

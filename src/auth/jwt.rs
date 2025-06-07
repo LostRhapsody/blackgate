@@ -36,7 +36,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use crate::routing::handlers::RouteConfig;
-use tracing::{debug,info};
+use tracing::debug;
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Public Structs                            ****//
@@ -155,6 +155,7 @@ mod tests {
     use serde_json;
     use assert_cmd::Command;
     use tokio::runtime::Runtime;
+    use tracing::info;
 
     // Helper function to create a test JWT token
     fn create_test_jwt(

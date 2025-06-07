@@ -23,6 +23,7 @@ Current Progress: 15%
 - Rate Limiting - Configurable per-minute and per-hour rate limits for each route
 - Database schema migrations, mostly for developers on The Black Gate Project, useful for customized forks as well
 - Health Checks for endpoints
+- Automatically switch to pre-configured backup routes if the primary upstream is unhealthy
 - Customizable defaults for health check interval and rate limites
 - Dockerfile included for containerization to self-host
 
@@ -31,8 +32,6 @@ Current Progress: 15%
 **Health Check Updates**
 
 We currently support health checks every 60 seconds, using either a dedicated health check endpoint or a "HEAD" request. The status of the check is displayed on the routes page. Remaining features to implement:
-- Trigger a health check from the Routes page, instead of waiting.
-- Using these in the backup endpoint mechanism, which has not started yet.
 - Additional states (degraded performance, only applicable to endpoints with real health checks)
 - Integration with the metrics system
 - Alerts via a webhook or other notification system (TBD)
@@ -50,10 +49,6 @@ Organize API routes into collections.
 - Restric route access based on tenant ID
 - Include tenants in metrics for tracking
 - Recieve the tenant ID in the client request and validate it during the authentication pipeline
-
-**Backup routes**
-
-- When an API is unavailable, configure a back up route you can switch to temporarily to ensure your application can continue to function
 
 **Sections with detailed information on features below**
 

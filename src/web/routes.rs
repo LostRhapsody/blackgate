@@ -16,6 +16,8 @@ pub fn create_routes() -> Router<AppState> {
         .route("/web/routes/edit/{*path}", post(handlers::edit_route_submit))
         .route("/web/routes/{*path}", delete(handlers::delete_route))
         .route("/web/routes/clear-health/{*path}", post(handlers::clear_route_health_status))
+        .route("/web/routes/trigger-health/", post(handlers::trigger_all_routes_health_check))
+        .route("/web/routes/trigger-health/{*path}", post(handlers::trigger_route_health_check))
         .route("/web/metrics", get(handlers::metrics_view))
         // Settings routes
         .route("/web/settings", get(handlers::settings_view))

@@ -1,12 +1,13 @@
+use std::sync::Arc;
+
 use axum::{response::Html, extract::{State, Form, Path, Query}, http::StatusCode};
 use serde::Deserialize;
 use sqlx::Row;
-use tracing::{error, warn};
-use crate::{database::queries, health::HealthStatus, AppState, AuthType, 
-    rate_limiter::{
+use tracing::{error, info, warn};
+use crate::{database::queries, health::{HealthChecker, HealthStatus}, rate_limiter::{
         DEFAULT_RATE_LIMIT_PER_HOUR,
         DEFAULT_RATE_LIMIT_PER_MINUTE
-    }
+    }, AppState, AuthType
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -431,6 +432,7 @@ pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
         <h2>Routes</h2>
         <div class="dashboard-container">
             <button hx-get="/web/routes/add-form" hx-target="#routes-content">Add Route</button>
+            <button hx-post="/web/routes/trigger-health" hx-target="#content" hx-swap="innerHTML" hx-confirm="Trigger health check for all routes?">Check Health</button>
             <div id="routes-content" class="dashboard-section">
                 <h3>Configured Routes</h3>
     "##);
@@ -474,11 +476,12 @@ pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
                             <td>{}</td>
                             <td>
                                 <button hx-get="/web/routes/edit/{}" hx-target="#routes-content" hx-swap="innerHTML">Edit</button>
+                                <button hx-post="/web/routes/trigger-health/{}" hx-target="#content" hx-swap="innerHTML" hx-confirm="Trigger health check for this route?">Check Health</button>
                                 <button hx-post="/web/routes/clear-health/{}" hx-target="#content" hx-swap="innerHTML" hx-confirm="Clear health status for this route?">Clear Health</button>
                                 <button hx-delete="/web/routes/{}" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Delete this route?">Delete</button>
                             </td>
                         </tr>
-            "##, health_indicator, path, upstream, auth_type.to_display_string(), rate_min, rate_hour, health_status, path, path, path));
+            "##, health_indicator, path, upstream, auth_type.to_display_string(), rate_min, rate_hour, health_status, path, path, path, path));
         }
 
         html.push_str("</tbody></table>");
@@ -876,6 +879,46 @@ pub async fn clear_route_health_status(State(state): State<AppState>, Path(path)
         Ok(_) => Ok(routes_list(State(state)).await),
         Err(e) => {
             eprintln!("Failed to clear health status for route: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn trigger_all_routes_health_check(State(state): State<AppState>) -> Result<Html<String>, StatusCode> {
+    info!("Triggering health checks for all routes");
+    match HealthChecker::new(Arc::new(state.db.clone())).run_health_checks().await {
+        Ok(_) => {
+            info!("Health checks completed successfully for all routes");
+            // If health checks were successful, return the routes list
+            Ok(routes_list(State(state)).await)
+        }
+        Err(e) => {
+            eprintln!("Failed to trigger health checks for all routes: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn trigger_route_health_check(State(state): State<AppState>, Path(path): Path<String>) -> Result<Html<String>, StatusCode> {
+    info!("Triggering health check for route: {}", path);
+    let health_checker = HealthChecker::new(Arc::new(state.db.clone()));
+    let route = health_checker.fetch_route_for_health_check(&path).await;
+    match route {
+        Ok(route) => {
+            info!("Found route for health check: {}", path);
+            match health_checker.check_route_health(&route[0]).await {
+                Ok(_) => {
+                    info!("Health check successful for route: {}", path);
+                    Ok(routes_list(State(state)).await)
+                },
+                Err(e) => {
+                    eprintln!("Failed to check health for route {}: {}", path, e);
+                    Err(StatusCode::INTERNAL_SERVER_ERROR)
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to fetch route for health check: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }

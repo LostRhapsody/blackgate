@@ -103,6 +103,15 @@ pub struct HealthChecker {
     check_interval_seconds: u64,
 }
 
+/// Route information needed for health checking
+#[derive(Debug)]
+pub struct RouteHealthInfo {
+    pub path: String,
+    pub upstream: String,
+    pub health_endpoint: Option<String>,
+    pub health_check_status: HealthStatus,
+}
+
 /// Default health check interval in seconds
 const DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS: u64 = 60;
 /// Default health check time out in seconds
@@ -166,7 +175,7 @@ impl HealthChecker {
     }
 
     /// Run health checks for all routes
-    async fn run_health_checks(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn run_health_checks(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Fetch all routes that need health checking
         let routes = self.fetch_routes_for_health_check().await?;
 
@@ -206,7 +215,7 @@ impl HealthChecker {
     }
 
     /// Check the health of a single route
-    async fn check_route_health(&self, route: &RouteHealthInfo) -> Result<HealthCheckResult, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn check_route_health(&self, route: &RouteHealthInfo) -> Result<HealthCheckResult, Box<dyn std::error::Error + Send + Sync>> {
         let start_time = std::time::Instant::now();
 
         // First, try the dedicated health endpoint if available
@@ -327,25 +336,11 @@ impl HealthChecker {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-//****                       Private Structs                             ****//
-///////////////////////////////////////////////////////////////////////////////
-
-/// Route information needed for health checking
-#[derive(Debug)]
-struct RouteHealthInfo {
-    path: String,
-    upstream: String,
-    health_endpoint: Option<String>,
-    health_check_status: HealthStatus,
-}
-
-///////////////////////////////////////////////////////////////////////////////
 //****                      Database Functions                           ****//
 ///////////////////////////////////////////////////////////////////////////////
 
 impl HealthChecker {
     /// Fetch all routes that need health checking
-    /// TODO what does this mean with the health check status????
     async fn fetch_routes_for_health_check(&self) -> Result<Vec<RouteHealthInfo>, sqlx::Error> {
         let rows = sqlx::query(
             "SELECT r.path, r.upstream, r.health_endpoint, 
@@ -353,6 +348,31 @@ impl HealthChecker {
             FROM routes r
             LEFT JOIN route_health_checks rhc ON r.path = rhc.path"
         )
+        .fetch_all(self.db_pool.as_ref())
+        .await?;
+
+        let mut routes = Vec::new();
+        for row in rows {
+            routes.push(RouteHealthInfo {
+                path: row.get("path"),
+                upstream: row.get("upstream"),
+                health_endpoint: row.get("health_endpoint"),
+                health_check_status: HealthStatus::from_string(row.get("health_check_status")),
+            });
+        }
+
+        Ok(routes)
+    }
+
+    pub async fn fetch_route_for_health_check(&self, path: &str) -> Result<Vec<RouteHealthInfo>, sqlx::Error> {
+        let rows = sqlx::query(
+            "SELECT r.path, r.upstream, r.health_endpoint, 
+            rhc.health_check_status
+            FROM routes r
+            LEFT JOIN route_health_checks rhc ON r.path = rhc.path
+            WHERE r.path = ?"
+        )
+        .bind(path)
         .fetch_all(self.db_pool.as_ref())
         .await?;
 

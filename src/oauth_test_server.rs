@@ -116,7 +116,6 @@ pub async fn spawn_oauth_test_server() -> (SocketAddr, oneshot::Sender<()>) {
     let addr = listener.local_addr().unwrap();
 
     info!("OAuth Test Server running on http://{}", addr);
-    // initialize the health check service
 
     let server = axum::serve(
         listener,

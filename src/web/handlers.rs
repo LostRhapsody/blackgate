@@ -53,6 +53,15 @@ fn generate_auth_fields(auth_type: AuthType, form_data: &RouteFormData) -> Strin
             "##,
             form_data.auth_value.as_deref().unwrap_or("")
         ),
+        AuthType::BasicAuth => format!(
+            r##"
+                <div>
+                    <label for="auth_value">Basic Auth Credentials (username:password):</label><br>
+                    <input type="text" id="auth_value" name="auth_value" value="{}" placeholder="username:password">
+                </div>
+            "##,
+            form_data.auth_value.as_deref().unwrap_or("")
+        ),
         AuthType::OAuth2 => format!(
             r##"
                 <div>
@@ -181,7 +190,7 @@ fn generate_route_form(is_edit: bool, path: &str, form_data: RouteFormData) -> S
                     <label for="path">Path:</label><br>
                     <input type="text" id="path" name="path" required value="{}" placeholder="/api/example">
                 </div>
-                
+
                 <div>
                     <label for="upstream">Upstream URL:</label><br>
                     <input type="url" id="upstream" name="upstream" required value="{}" placeholder="https://api.example.com">
@@ -192,6 +201,7 @@ fn generate_route_form(is_edit: bool, path: &str, form_data: RouteFormData) -> S
                     <select id="auth_type" name="auth_type" hx-trigger="change" hx-target="#auth-fields" hx-get="/web/routes/auth-fields?auth_type={}" hx-swap="innerHTML">
                         <option value="none"{}>None</option>
                         <option value="api-key"{}>API Key</option>
+                        <option value="basic-auth"{}>Basic Auth</option>
                         <option value="oauth2"{}>OAuth 2.0</option>
                         <option value="jwt"{}>JWT</option>
                         <option value="oidc"{}>OIDC</option>
@@ -230,6 +240,7 @@ fn generate_route_form(is_edit: bool, path: &str, form_data: RouteFormData) -> S
         form_data.auth_type,
         if auth_type == AuthType::None { " selected" } else { "" },
         if auth_type == AuthType::ApiKey { " selected" } else { "" },
+        if auth_type == AuthType::BasicAuth { " selected" } else { "" },
         if auth_type == AuthType::OAuth2 { " selected" } else { "" },
         if auth_type == AuthType::Jwt { " selected" } else { "" },
         if auth_type == AuthType::Oidc { " selected" } else { "" },
@@ -280,7 +291,7 @@ pub async fn dashboard_view(State(state): State<AppState>) -> Html<String> {
         let total_requests: i64 = row.get("total_requests");
         let success_count: i64 = row.get("success_count");
         let avg_duration: f64 = row.get::<Option<f64>, _>("avg_duration_ms").unwrap_or(0.0);
-        
+
         let success_rate = if total_requests > 0 {
             (success_count as f64 / total_requests as f64) * 100.0
         } else {
@@ -444,7 +455,7 @@ pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
 
 pub async fn metrics_view(State(state): State<AppState>, Query(query): Query<MetricsQuery>) -> Html<String> {
     let limit = query.limit.unwrap_or(20);
-    
+
     // Get metrics statistics
     let stats_query = queries::fetch_metrics_statistics(&state.db)
         .await
@@ -464,7 +475,7 @@ pub async fn metrics_view(State(state): State<AppState>, Query(query): Query<Met
         let max_duration: i64 = row.get::<Option<i64>, _>("max_duration_ms").unwrap_or(0);
         let total_request_bytes: i64 = row.get::<Option<i64>, _>("total_request_bytes").unwrap_or(0);
         let total_response_bytes: i64 = row.get::<Option<i64>, _>("total_response_bytes").unwrap_or(0);
-        
+
         let success_rate = if total_requests > 0 {
             (success_count as f64 / total_requests as f64) * 100.0
         } else {
@@ -517,7 +528,7 @@ pub async fn metrics_view(State(state): State<AppState>, Query(query): Query<Met
                 <p>No metrics data available</p>
             </div>
         "##);
-    }    
+    }
     // Get recent requests
     let rows = queries::fetch_recent_request_metrics(&state.db, limit as i32)
         .await
@@ -539,7 +550,7 @@ pub async fn metrics_view(State(state): State<AppState>, Query(query): Query<Met
                     <button hx-get="/web/metrics?limit={}" hx-target="#content" hx-swap="innerHTML" style="margin-left: 10px;">Refresh</button>
                 </div>
             </div>
-    "##, 
+    "##,
         limit,
         if limit == 10 { " selected" } else { "" },
         if limit == 20 { " selected" } else { "" },

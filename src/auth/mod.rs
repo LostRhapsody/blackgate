@@ -1,11 +1,12 @@
 //! # Authentication Module
 //!
 //! This module provides authentication functionality for HTTP requests in the blackgate application.
-//! It supports multiple authentication types including API keys, OAuth 2.0, JWT tokens, and OpenID Connect (OIDC).
+//! It supports multiple authentication types including API keys, Basic Auth, OAuth 2.0, JWT tokens, and OpenID Connect (OIDC).
 //!
 //! ## Supported Authentication Types
 //!
 //! - **API Key**: Simple header-based authentication using a pre-configured API key
+//! - **Basic Auth**: HTTP Basic Authentication using username and password
 //! - **OAuth 2.0**: Client credentials flow with automatic token caching and refresh
 //! - **JWT**: JSON Web Token validation with configurable signing algorithms
 //! - **OIDC**: OpenID Connect authentication with token introspection and discovery
@@ -15,6 +16,7 @@
 //!
 //! - Thread-safe OAuth token caching to minimize redundant token requests
 //! - Configurable JWT validation with support for various signing algorithms
+//! - HTTP Basic Authentication with base64 encoding/decoding
 //! - Comprehensive error handling with appropriate HTTP status codes
 //! - Structured logging for authentication events and errors
 //!
@@ -27,11 +29,13 @@
 //! ## Sub-modules
 //!
 //! - `types`: Authentication type definitions and enums
+//! - `basic`: HTTP Basic Authentication utilities
 //! - `oauth`: OAuth 2.0 client credentials implementation with token caching
 //! - `jwt`: JWT token creation, validation, and configuration
 //! - `oidc`: OpenID Connect authentication utilities
 
 pub mod types;
+pub mod basic;
 pub mod oauth;
 pub mod jwt;
 
@@ -40,6 +44,7 @@ pub mod oidc;
 
 use std::sync::{Arc, Mutex};
 use crate::routing::handlers::RouteConfig;
+use basic::encode_basic_auth;
 use oauth::{get_oauth_token, OAuthTokenCache};
 use jwt::{create_jwt_config, validate_jwt_token};
 use oidc::{create_oidc_config, fetch_oidc_discovery, validate_oidc_token};
@@ -59,6 +64,31 @@ pub async fn apply_authentication(
     auth_header: Option<&str>,
 ) -> Result<reqwest::RequestBuilder, axum::response::Response> {
     match route_config.auth_type {
+        AuthType::BasicAuth => {
+            debug!("Using Basic Auth for route {}", path);
+
+            // For Basic Auth, we expect auth_value to contain "username:password"
+            if let Some(auth_value) = &route_config.auth_value {
+                if let Some((username, password)) = auth_value.split_once(':') {
+                    // Encode the credentials and add to Authorization header
+                    let auth_header = encode_basic_auth(username, password);
+                    debug!("Adding Basic Auth header for route {}", path);
+                    Ok(builder.header("Authorization", auth_header))
+                } else {
+                    error!("Invalid Basic Auth format for route {}. Expected 'username:password'", path);
+                    Err(axum::response::Response::builder()
+                        .status(500)
+                        .body(axum::body::Body::from("Invalid Basic Auth configuration"))
+                        .unwrap())
+                }
+            } else {
+                error!("Missing Basic Auth credentials for route {}", path);
+                Err(axum::response::Response::builder()
+                    .status(500)
+                    .body(axum::body::Body::from("Basic Auth credentials are required"))
+                    .unwrap())
+            }
+        }
         AuthType::ApiKey => {
             if let Some(auth_value) = &route_config.auth_value {
                 debug!("Using API key authentication for route {}", path);

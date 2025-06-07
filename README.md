@@ -26,11 +26,6 @@ Current Progress: 15%
 
 ## Current WIP Feature
 
-**Update JWT Extraction Logic**
-Status: The token itself for JWT authentication is expected to be stored in the route record in the current implementation. In a production scenario, it's more likely the token will come from the client... to make this make a bit more sense, we may update it to do that instead. A bit more research is required. **OIDC needs the same update**
-
-**Database Module Updates**
-The database module has been introduced to simplify calling the database and retrieving data. It still needs some more updates, and current locations in code need to be refactored to fetch using it instead of sqlx as well. Keeps all our queries and database logic organized.
 
 **Sections with detailed information on features below**
 
@@ -38,6 +33,8 @@ The database module has been introduced to simplify calling the database and ret
 - oAuth2.0 Client Credentials
 - API Keys
 - JWT
+- OIDC (un-tested)
+- Basic Authentication (username:password base64 encoded)
 
 ## Example (Using httpbin.org)
 ```bash
@@ -67,8 +64,6 @@ $ curl -X POST http://localhost:3000/warehouse -d '{"payload": "test"}' -H "Cont
 ---
 
 ## Next Steps
-- User/Password Authentication
-- OIDC Authentication
 - Tenant based Authorization (Restrict routes and actions based on the client we recceive the request from)
 - Enhanced rate limiting features (IP-based limiting, custom time windows)
 - Enhanced web UI (Mostly complete, will just be enhanced with new features as we go, maybe more modern styles, low-priority)
@@ -268,7 +263,7 @@ The OIDC authentication now works as follows:
 * Structured logging: Debug/info/warn logs for monitoring and troubleshooting
 
 ## Tests
-Additional tests 
+Additional tests
 
 test POST request
 ```bash

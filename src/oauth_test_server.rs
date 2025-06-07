@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use tokio::sync::oneshot;
 use uuid::Uuid;
+use tracing::info;
 
 #[derive(Debug, Deserialize)]
 struct TokenRequest {
@@ -83,7 +84,7 @@ async fn token_endpoint(Json(request): Json<TokenRequest>) -> (StatusCode, Json<
 
     // Generate a random token (using UUID v4)
     let token = Uuid::new_v4().to_string();
-    
+
     // Return successful response
     (
         StatusCode::OK,
@@ -113,9 +114,10 @@ pub async fn spawn_oauth_test_server() -> (SocketAddr, oneshot::Sender<()>) {
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3001").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    
-    println!("OAuth Test Server running on http://{}", addr);
-    
+
+    info!("OAuth Test Server running on http://{}", addr);
+    // initialize the health check service
+
     let server = axum::serve(
         listener,
         app.into_make_service(),

@@ -218,7 +218,7 @@ pub async fn handle_request_core(
             let allowed_methods: String = row.get("allowed_methods");
 
             // If allowed_methods is empty, all methods are allowed
-            if !allowed_methods.is_empty() {
+            if !allowed_methods.is_empty() && method.as_str() != "HEAD" {
                 let allowed_methods: Vec<&str> = allowed_methods.split(',').collect();
                 if !allowed_methods.contains(&method.as_str()) {
                     warn!(

@@ -38,6 +38,7 @@ use crate::AppState;
 use crate::auth::oauth::OAuthTokenCache;
 use crate::rate_limiter::RateLimiter;
 use crate::routing::router::create_router;
+use crate::health::HealthChecker;
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                       Public Functions                            ****//
@@ -54,6 +55,9 @@ pub async fn start_server(pool: SqlitePool) {
     };
 
     let app = create_router(app_state);
+
+    // initialize the health check service
+    HealthChecker::new(Arc::new(pool.clone())).start_background_checks();
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -76,6 +80,9 @@ pub async fn start_server_with_shutdown(
     };
 
     let app = create_router(app_state);
+
+    // initialize the health check service
+    HealthChecker::new(Arc::new(pool.clone())).start_background_checks();
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     let addr = listener.local_addr().unwrap();

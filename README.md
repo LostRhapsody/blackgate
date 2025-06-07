@@ -116,6 +116,7 @@ $ curl -X POST http://localhost:3000/warehouse -d '{"payload": "test"}' -H "Cont
 - Documentation support - include API documentation (or at the least, links to it) in the Gateway
 - Collections - combine related routes into a single API collection to keep routes organized
 - Payment Gateway support - Make it easy to set up PayPal, Stripe, and Braintree in your Gateway, switch between them during outages, and provide intuitive check-out form solutions
+- Import/Export for routes and metrics
 
 ---
 

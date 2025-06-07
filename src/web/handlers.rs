@@ -268,6 +268,11 @@ fn generate_route_form(is_edit: bool, path: &str, form_data: RouteFormData) -> S
 //****                       Public Functions                            ****//
 ///////////////////////////////////////////////////////////////////////////////
 
+pub async fn home_page() -> Html<String> {
+    Html(std::fs::read_to_string("templates/home.html")
+        .unwrap_or_else(|_| String::from("<h1>Welcome to BlackGate</h1><p>API Gateway Dashboard</p>")))
+}
+
 pub async fn dashboard_view(State(state): State<AppState>) -> Html<String> {
     // Get recent metrics for last 5 requests
     let recent_requests = queries::fetch_recent_requests_for_dashboard(&state.db, 5)

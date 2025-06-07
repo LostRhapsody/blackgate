@@ -62,7 +62,7 @@ pub async fn start_server(pool: SqlitePool) {
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     let addr = listener.local_addr().unwrap();
     info!("Black Gate running on http://{}", addr);
-    info!("Web interface: http://localhost:3000/dashboard");
+    info!("Web interface: http://localhost:3000/");
     axum::serve(listener, app).await.unwrap();
 }
 

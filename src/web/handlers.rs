@@ -1,7 +1,7 @@
 use axum::{response::Html, extract::{State, Form, Path, Query}, http::StatusCode};
 use serde::Deserialize;
 use sqlx::Row;
-use crate::{AppState, AuthType, database::queries};
+use crate::{database::queries, health::HealthStatus, AppState, AuthType};
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Public Structs                            ****//
@@ -445,8 +445,10 @@ pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
             let auth_type = AuthType::from_str(&auth_type_str);
             let rate_min: i64 = row.get("rate_limit_per_minute");
             let rate_hour: i64 = row.get("rate_limit_per_hour");
-            let health_status: String = row.get("health_status");
 
+            // unwrap that health status            
+            let health_status: Option<String> = row.get("health_check_status");
+            let health_status = health_status.unwrap_or_else(|| HealthStatus::Unknown.to_string());
             let health_indicator = generate_health_indicator(&health_status);
 
             html.push_str(&format!(r##"

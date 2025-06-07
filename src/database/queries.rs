@@ -99,7 +99,7 @@ pub async fn fetch_routes_basic_info(
     pool: &SqlitePool,
 ) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
     sqlx::query(
-        "SELECT r.path, r.upstream, r.auth_type, r.rate_limit_per_minute, r.rate_limit_per_hour
+        "SELECT r.path, r.upstream, r.auth_type, r.rate_limit_per_minute, r.rate_limit_per_hour, h.health_check_status
          FROM routes r
          LEFT JOIN (
              SELECT path, health_check_status,

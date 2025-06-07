@@ -22,10 +22,46 @@ Current Progress: 15%
 - A convienient dashboard page for the Web UI
 - Rate Limiting - Configurable per-minute and per-hour rate limits for each route
 - Database schema migrations, mostly for developers on The Black Gate Project, useful for customized forks as well
+- Health Checks for endpoints
 - Dockerfile included for containerization to self-host
+
+## Current Focus
+
+**Database schema planning and clean up**
+
+During development, the database schema has gotten several migrations, many of which were just done to test the migration feature.
+
+Schema needs to be reviewied and simplified so we can keep what we need and toss what we don't, start fresh with a new database.
 
 ## Current WIP Feature
 
+**Health Check Updates**
+
+We currently support health checks every 60 seconds, using either a dedicated health check endpoint or a "HEAD" request. The status of the check is displayed on the routes page. Remaining features to implement:
+- Trigger a health check from the Routes page, instead of waiting.
+- Using these in the backup endpoint mechanism, which has not started yet.
+- Configurable check frequency, instead of only 60 seconds.
+- Additional states (degraded performance, only applicable to endpoints with real health checks)
+- Integration with the metrics system
+- Alerts via a webhook or other notification system (TBD)
+
+## Upcoming features
+
+**API route collections**
+
+Organize API routes into collections.
+- Manage routes authentication and authorization either by collection or by route
+- Bulk actions such as adding/removing entire collections, or many route configs at once
+
+**Tenant-based Authorization**
+
+- Restric route access based on tenant ID
+- Include tenants in metrics for tracking
+- Recieve the tenant ID in the client request and validate it during the authentication pipeline
+
+**Backup routes**
+
+- When an API is unavailable, configure a back up route you can switch to temporarily to ensure your application can continue to function
 
 **Sections with detailed information on features below**
 

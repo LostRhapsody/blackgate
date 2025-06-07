@@ -906,13 +906,25 @@ pub async fn trigger_route_health_check(State(state): State<AppState>, Path(path
     match route {
         Ok(route) => {
             info!("Found route for health check: {}", path);
-            match health_checker.check_route_health(&route[0]).await {
-                Ok(_) => {
-                    info!("Health check successful for route: {}", path);
-                    Ok(routes_list(State(state)).await)
-                },
+            let result = health_checker.check_route_health(&route[0]).await;
+            match result {
+                Ok(health_result) => {
+                    // Store the health check result in database
+                    if let Err(e) = health_checker.store_health_result(&health_result).await {
+                        error!("Failed to store health result for route {}: {}", health_result.path, e);
+                    }
+
+                    info!(
+                        "Health check for {} completed: {} ({}ms, method: {})",
+                        health_result.path,
+                        health_result.health_check_status.to_string(),
+                        health_result.response_time_ms.unwrap_or(0),
+                        health_result.method_used.to_string()
+                    );
+                    return Ok(routes_list(State(state)).await);
+                }
                 Err(e) => {
-                    eprintln!("Failed to check health for route {}: {}", path, e);
+                    error!("Health check failed for route {}: {}", route[0].path, e);
                     Err(StatusCode::INTERNAL_SERVER_ERROR)
                 }
             }

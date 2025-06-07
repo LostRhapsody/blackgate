@@ -390,7 +390,7 @@ impl HealthChecker {
     }
 
     /// Store health check result in the database
-    async fn store_health_result(&self, result: &HealthCheckResult) -> Result<(), sqlx::Error> {
+    pub async fn store_health_result(&self, result: &HealthCheckResult) -> Result<(), sqlx::Error> {
         sqlx::query(
             "INSERT OR REPLACE INTO route_health_checks
              (path, health_check_status, response_time_ms, error_message, checked_at, method_used)

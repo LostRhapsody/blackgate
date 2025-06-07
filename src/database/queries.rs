@@ -1,11 +1,11 @@
 //! # Database Queries Module
-//! 
+//!
 //! This module centralizes all database queries used throughout the Black Gate API Gateway.
 //! It provides well-named functions for each database operation, making it easier to
 //! maintain and reuse queries across different parts of the application.
-//! 
+//!
 //! ## Query Categories
-//! 
+//!
 //! - **Route Queries**: Add, update, delete, and list routes
 //! - **Metrics Queries**: Fetch request metrics and statistics
 //! - **General Queries**: Utility queries for counts and other operations
@@ -97,9 +97,18 @@ pub async fn fetch_all_routes_for_listing(
 pub async fn fetch_routes_basic_info(
     pool: &SqlitePool,
 ) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
-    sqlx::query("SELECT path, upstream, auth_type, rate_limit_per_minute, rate_limit_per_hour FROM routes")
-        .fetch_all(pool)
-        .await
+    sqlx::query(
+        "SELECT r.path, r.upstream, r.auth_type, r.rate_limit_per_minute, r.rate_limit_per_hour,
+         COALESCE(h.status, 'Unknown') as health_status
+         FROM routes r
+         LEFT JOIN (
+             SELECT path, status,
+                    ROW_NUMBER() OVER (PARTITION BY path ORDER BY checked_at DESC) as rn
+             FROM route_health_checks
+         ) h ON r.path = h.path AND h.rn = 1"
+    )
+    .fetch_all(pool)
+    .await
 }
 
 /// Fetch a single route by path with all fields for editing
@@ -141,8 +150,8 @@ pub async fn update_route_by_path(
     health_endpoint: &str,
     original_path: &str,
 ) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {    sqlx::query(
-        "UPDATE routes SET 
-        path = ?, upstream = ?, auth_type = ?, auth_value = ?, allowed_methods = ?, 
+        "UPDATE routes SET
+        path = ?, upstream = ?, auth_type = ?, auth_value = ?, allowed_methods = ?,
         oauth_token_url = ?, oauth_client_id = ?, oauth_client_secret = ?, oauth_scope = ?,
         jwt_secret = ?, jwt_algorithm = ?, jwt_issuer = ?, jwt_audience = ?, jwt_required_claims = ?,
         oidc_issuer = ?, oidc_client_id = ?, oidc_client_secret = ?, oidc_audience = ?, oidc_scope = ?,

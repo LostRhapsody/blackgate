@@ -42,6 +42,17 @@ pub struct RouteFormData {
 //****                       Helper Functions                            ****//
 ///////////////////////////////////////////////////////////////////////////////
 
+fn generate_health_indicator(health_status: &str) -> String {
+    let (color, title) = match health_status {
+        "Healthy" => ("green", "Healthy - Service is responding normally"),
+        "Unhealthy" => ("red", "Unhealthy - Service is not responding properly"),
+        "Unavailable" => ("yellow", "Unavailable - Health check cannot be performed"),
+        _ => ("purple", "Unknown - Health status not yet determined"),
+    };
+
+    format!(r##"<span class="health-indicator health-{}" title="{}">●</span>"##, color, title)
+}
+
 fn generate_auth_fields(auth_type: AuthType, form_data: &RouteFormData) -> String {
     match auth_type {
         AuthType::ApiKey => format!(
@@ -416,6 +427,7 @@ pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
                             <th>Auth</th>
                             <th>Rate/Min</th>
                             <th>Rate/Hour</th>
+                            <th>Health Status</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -428,9 +440,13 @@ pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
             let auth_type = AuthType::from_str(&auth_type_str);
             let rate_min: i64 = row.get("rate_limit_per_minute");
             let rate_hour: i64 = row.get("rate_limit_per_hour");
+            let health_status: String = row.get("health_status");
+
+            let health_indicator = generate_health_indicator(&health_status);
 
             html.push_str(&format!(r##"
                         <tr>
+                            <td>{} {}</td>
                             <td>{}</td>
                             <td>{}</td>
                             <td>{}</td>
@@ -441,7 +457,7 @@ pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
                                 <button hx-delete="/web/routes/{}" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Delete this route?">Delete</button>
                             </td>
                         </tr>
-            "##, path, upstream, auth_type.to_display_string(), rate_min, rate_hour, path, path));
+            "##, health_indicator, path, upstream, auth_type.to_display_string(), rate_min, rate_hour, health_status, path, path));
         }
 
         html.push_str("</tbody></table>");

@@ -2,8 +2,8 @@
 nav {
     ul{
         display: flex;
-        justify-content: flex-start; 
-        align-items: center; 
+        justify-content: flex-start;
+        align-items: center;
         margin-bottom: 15px;
         list-style: none;
         padding-inline-start: 0px;
@@ -46,9 +46,9 @@ form {
 }
 
 .dashboard-header {
-    display: flex; 
-    justify-content: space-between; 
-    align-items: center; 
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: 15px;
 }
 
@@ -65,7 +65,7 @@ form {
     padding: 10px;
     border: 1px solid #ddd;
     border-radius: 4px;
-    
+
     label {
         font-weight: bold;
     }
@@ -80,7 +80,7 @@ form {
     border-collapse: collapse;
     margin-top: 15px;
 
-    th { 
+    th {
         background-color: #f2f2f2;
         font-weight: bold;
     }
@@ -103,4 +103,27 @@ form {
 
 .error-row td {
     padding-left: 20px;
+}
+
+/* Health indicator styles */
+.health-indicator {
+    font-size: 16px;
+    margin-right: 8px;
+    display: inline-block;
+}
+
+.health-green {
+    color: #4caf50;
+}
+
+.health-red {
+    color: #f44336;
+}
+
+.health-purple {
+    color: #9c27b0;
+}
+
+.health-yellow {
+    color: #ffd700;
 }

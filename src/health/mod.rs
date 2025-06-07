@@ -324,6 +324,7 @@ struct RouteHealthInfo {
 
 impl HealthChecker {
     /// Fetch all routes that need health checking
+    /// TODO what does this mean with the health check status????
     async fn fetch_routes_for_health_check(&self) -> Result<Vec<RouteHealthInfo>, sqlx::Error> {
         let rows = sqlx::query(
             "SELECT path, upstream, health_endpoint,

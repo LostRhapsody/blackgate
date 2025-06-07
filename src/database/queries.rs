@@ -95,6 +95,7 @@ pub async fn fetch_all_routes_for_listing(
 }
 
 /// Fetch routes with basic fields for web UI
+/// TODO we're ditching the status column so FIX THIS
 pub async fn fetch_routes_basic_info(
     pool: &SqlitePool,
 ) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
@@ -333,6 +334,7 @@ pub async fn store_request_metrics(
 }
 
 /// Clear health status for a route by setting it to "Unknown"
+/// TODO Need a better solution as this is CHAOTIC
 pub async fn clear_route_health_status(
     pool: &SqlitePool,
     path: &str,

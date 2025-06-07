@@ -473,6 +473,7 @@ pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
             } else {
                 // Show current health status for all routes
                 // TODO turn this into a query function in queries.rs
+                // TODO we're ditching the status column so FIX THIS
                 let rows = sqlx::query(
                     "SELECT r.path, r.upstream, r.health_endpoint, 
                      COALESCE(r.health_check_status, 'Available') as health_check_status,

@@ -1,7 +1,13 @@
 use axum::{response::Html, extract::{State, Form, Path, Query}, http::StatusCode};
 use serde::Deserialize;
 use sqlx::Row;
-use crate::{database::queries, health::HealthStatus, AppState, AuthType};
+use tracing::{error, warn};
+use crate::{database::queries, health::HealthStatus, AppState, AuthType, 
+    rate_limiter::{
+        DEFAULT_RATE_LIMIT_PER_HOUR,
+        DEFAULT_RATE_LIMIT_PER_MINUTE
+    }
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Public Structs                            ****//
@@ -264,8 +270,8 @@ fn generate_route_form(is_edit: bool, path: &str, form_data: RouteFormData) -> S
         if auth_type == AuthType::Oidc { " selected" } else { "" },
         auth_fields,
         form_data.allowed_methods.as_deref().unwrap_or(""),
-        form_data.rate_limit_per_minute.unwrap_or(60),
-        form_data.rate_limit_per_hour.unwrap_or(1000),
+        form_data.rate_limit_per_minute.unwrap_or(DEFAULT_RATE_LIMIT_PER_MINUTE),
+        form_data.rate_limit_per_hour.unwrap_or(DEFAULT_RATE_LIMIT_PER_HOUR),
         submit_text
     )
 }
@@ -671,11 +677,56 @@ pub async fn auth_fields_form(Query(params): Query<std::collections::HashMap<Str
     Html(html)
 }
 
-pub async fn add_route_form() -> Html<String> {
+pub async fn add_route_form(State(state): State<AppState>) -> Html<String> {
+
+    // fetch the rate limit defaults from the DB
+    let row = queries::get_setting_by_key(&state.db, "default_rate_limit_per_hour")        
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR);
+
+    let default_rate_limit_per_hour:u32 = match row {
+        Ok(Some(row)) => {
+            let value_str: String = row.get("value");
+            value_str.parse().unwrap_or_else(|e| {
+                warn!("Failed to parse default_rate_limit_per_hour setting '{}': {}, using default", value_str, e);
+                DEFAULT_RATE_LIMIT_PER_HOUR
+            })
+        }
+        Ok(None) => {
+            warn!("Default rate limit setting not found, using fallback value");
+            DEFAULT_RATE_LIMIT_PER_HOUR // Fallback value if setting not found
+        },
+        Err(e) => {
+            error!("Failed to fetch default rate limit setting: {}", e);
+            DEFAULT_RATE_LIMIT_PER_HOUR // Fallback value if setting not found
+        }
+    };
+
+        // fetch the rate limit defaults from the DB
+    let row = queries::get_setting_by_key(&state.db, "default_rate_limit_per_minute")        
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR);
+
+    let default_rate_limit_per_minute:u32 = match row {
+        Ok(Some(row)) => {
+            let value_str: String = row.get("value");
+            value_str.parse().unwrap_or_else(|e| {
+                warn!("Failed to parse default_rate_limit_per_minute setting '{}': {}, using default", value_str, e);
+                DEFAULT_RATE_LIMIT_PER_MINUTE
+            })
+        },
+        Ok(None) => {
+            warn!("Default rate limit setting not found, using fallback value");
+            DEFAULT_RATE_LIMIT_PER_MINUTE // Fallback value if setting not found
+        },
+        Err(e) => {
+            error!("Failed to fetch default rate limit setting: {}", e);
+            DEFAULT_RATE_LIMIT_PER_MINUTE // Fallback value if setting not found
+        }
+    };
+
     let form_data = RouteFormData {
         auth_type: "none".to_string(),
-        rate_limit_per_minute: Some(60),
-        rate_limit_per_hour: Some(1000),
+        rate_limit_per_minute: Some(default_rate_limit_per_minute),
+        rate_limit_per_hour: Some(default_rate_limit_per_hour),
         ..Default::default()
     };
     Html(generate_route_form(false, "", form_data))
@@ -738,8 +789,8 @@ pub async fn add_route_submit(State(state): State<AppState>, Form(form): Form<Ro
         &form.jwt_issuer.unwrap_or_default(),
         &form.jwt_audience.unwrap_or_default(),
         &form.jwt_required_claims.unwrap_or_default(),
-        form.rate_limit_per_minute.unwrap_or(60),
-        form.rate_limit_per_hour.unwrap_or(1000),
+        form.rate_limit_per_minute.unwrap_or(DEFAULT_RATE_LIMIT_PER_MINUTE),
+        form.rate_limit_per_hour.unwrap_or(DEFAULT_RATE_LIMIT_PER_HOUR),
         &form.oidc_issuer.unwrap_or_default(),
         &form.oidc_client_id.unwrap_or_default(),
         &form.oidc_client_secret.unwrap_or_default(),

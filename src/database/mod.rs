@@ -170,6 +170,14 @@ impl DatabaseManager {
                         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                     );
+                    -- Default test route
+                    INSERT INTO routes (path, upstream, allowed_methods) VALUES
+                        ('/api/test', 'https://httpbin.org/get', 'GET');
+                    -- Default settings
+                    INSERT INTO settings (key, value, description) VALUES
+                        ('default_rate_limit_per_minute', '60', 'Default rate limit per minute'),
+                        ('default_rate_limit_per_hour', '1000', 'Default rate limit per hour'),
+                        ('health_check_interval_seconds', '60', 'Health check interval in seconds');                        
                 "#.to_string(),
             },
         ]

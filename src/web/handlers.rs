@@ -38,6 +38,13 @@ pub struct RouteFormData {
     health_endpoint: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct SettingsFormData {
+    key: String,
+    value: String,
+    description: Option<String>,
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 //****                       Helper Functions                            ****//
 ///////////////////////////////////////////////////////////////////////////////
@@ -818,6 +825,213 @@ pub async fn clear_route_health_status(State(state): State<AppState>, Path(path)
         Ok(_) => Ok(routes_list(State(state)).await),
         Err(e) => {
             eprintln!("Failed to clear health status for route: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn settings_view(State(state): State<AppState>) -> Html<String> {
+    // Fetch all settings from database
+    let settings_rows = sqlx::query("SELECT key, value, description, created_at, updated_at FROM settings ORDER BY key")
+        .fetch_all(&state.db)
+        .await
+        .unwrap_or_default();
+
+    let mut html = String::from(r##"
+        <h2>Gateway Settings</h2>
+        <div class="dashboard-container">
+            <button hx-get="/web/settings/add-form" hx-target="#settings-content">Add Setting</button>
+            <div id="settings-content" class="dashboard-section">
+                <h3>Current Settings</h3>
+    "##);
+
+    if !settings_rows.is_empty() {
+        html.push_str(r##"
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Key</th>
+                            <th>Value</th>
+                            <th>Description</th>
+                            <th>Updated</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        "##);
+
+        for row in settings_rows {
+            let key: String = row.get("key");
+            let value: String = row.get("value");
+            let description: Option<String> = row.get("description");
+            let updated_at: String = row.get("updated_at");
+
+            html.push_str(&format!(
+                r##"
+                        <tr>
+                            <td><code>{}</code></td>
+                            <td>{}</td>
+                            <td>{}</td>
+                            <td>{}</td>
+                            <td>
+                                <button hx-get="/web/settings/edit/{}" hx-target="#settings-content">Edit</button>
+                                <button hx-delete="/web/settings/{}" hx-target="#settings-content" hx-confirm="Are you sure you want to delete this setting?">Delete</button>
+                            </td>
+                        </tr>
+                "##,
+                key,
+                value,
+                description.unwrap_or_else(|| "—".to_string()),
+                updated_at,
+                key,
+                key
+            ));
+        }
+
+        html.push_str(r##"
+                    </tbody>
+                </table>
+        "##);
+    } else {
+        html.push_str(r##"
+                <p>No settings configured. <a href="#" hx-get="/web/settings/add-form" hx-target="#settings-content">Add your first setting</a>.</p>
+        "##);
+    }
+
+    html.push_str(r##"
+            </div>
+        </div>
+    "##);
+
+    Html(html)
+}
+
+pub async fn add_setting_form() -> Html<String> {
+    Html(String::from(r##"
+        <div class="form-container">
+            <h3>Add New Setting</h3>
+            <form hx-post="/web/settings/add" hx-target="#settings-content">
+                <div>
+                    <label for="key">Setting Key:</label><br>
+                    <input type="text" id="key" name="key" required placeholder="e.g., default_rate_limit">
+                </div>
+                <div>
+                    <label for="value">Setting Value:</label><br>
+                    <input type="text" id="value" name="value" required placeholder="e.g., 100">
+                </div>
+                <div>
+                    <label for="description">Description (optional):</label><br>
+                    <input type="text" id="description" name="description" placeholder="What this setting controls">
+                </div>
+                <div>
+                    <button type="submit">Add Setting</button>
+                    <button type="button" hx-get="/web/settings" hx-target="#settings-content">Cancel</button>
+                </div>
+            </form>
+        </div>
+    "##))
+}
+
+pub async fn edit_setting_form(State(state): State<AppState>, Path(key): Path<String>) -> Result<Html<String>, StatusCode> {
+    // Fetch the setting by key
+    let row = sqlx::query("SELECT key, value, description FROM settings WHERE key = ?")
+        .bind(&key)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    match row {
+        Some(setting) => {
+            let current_key: String = setting.get("key");
+            let current_value: String = setting.get("value");
+            let current_description: Option<String> = setting.get("description");
+
+            let html = format!(r##"
+                <div class="form-container">
+                    <h3>Edit Setting</h3>
+                    <form hx-post="/web/settings/edit/{}" hx-target="#settings-content">
+                        <div>
+                            <label for="key">Setting Key:</label><br>
+                            <input type="text" id="key" name="key" value="{}" required>
+                        </div>
+                        <div>
+                            <label for="value">Setting Value:</label><br>
+                            <input type="text" id="value" name="value" value="{}" required>
+                        </div>
+                        <div>
+                            <label for="description">Description (optional):</label><br>
+                            <input type="text" id="description" name="description" value="{}">
+                        </div>
+                        <div>
+                            <button type="submit">Update Setting</button>
+                            <button type="button" hx-get="/web/settings" hx-target="#settings-content">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            "##, 
+                key,
+                current_key,
+                current_value,
+                current_description.unwrap_or_default()
+            );
+
+            Ok(Html(html))
+        }
+        None => Err(StatusCode::NOT_FOUND)
+    }
+}
+
+pub async fn add_setting_submit(State(state): State<AppState>, Form(form): Form<SettingsFormData>) -> Result<Html<String>, StatusCode> {
+    // Insert new setting
+    let result = sqlx::query(
+        "INSERT INTO settings (key, value, description, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)"
+    )
+    .bind(&form.key)
+    .bind(&form.value)
+    .bind(&form.description)
+    .execute(&state.db)
+    .await;
+
+    match result {
+        Ok(_) => Ok(settings_view(State(state)).await),
+        Err(e) => {
+            eprintln!("Failed to add setting: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn edit_setting_submit(State(state): State<AppState>, Path(original_key): Path<String>, Form(form): Form<SettingsFormData>) -> Result<Html<String>, StatusCode> {
+    // Update setting
+    let result = sqlx::query(
+        "UPDATE settings SET key = ?, value = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?"
+    )
+    .bind(&form.key)
+    .bind(&form.value)
+    .bind(&form.description)
+    .bind(&original_key)
+    .execute(&state.db)
+    .await;
+
+    match result {
+        Ok(_) => Ok(settings_view(State(state)).await),
+        Err(e) => {
+            eprintln!("Failed to update setting: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn delete_setting(State(state): State<AppState>, Path(key): Path<String>) -> Result<Html<String>, StatusCode> {
+    let result = sqlx::query("DELETE FROM settings WHERE key = ?")
+        .bind(&key)
+        .execute(&state.db)
+        .await;
+
+    match result {
+        Ok(_) => Ok(settings_view(State(state)).await),
+        Err(e) => {
+            eprintln!("Failed to delete setting: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }

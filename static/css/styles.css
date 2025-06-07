@@ -390,6 +390,8 @@ button {
 
     td {
         color: var(--text-table);
+        max-width: 360px;
+        overflow-wrap: break-word;
     }
 }
 

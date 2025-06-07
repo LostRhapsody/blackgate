@@ -320,3 +320,10 @@ curl http://localhost:3000/rate-test  # Should succeed
 curl http://localhost:3000/rate-test  # Should succeed
 curl http://localhost:3000/rate-test  # Should return 429 Too Many Requests
 ```
+
+# Settings
+
+Health Check Interval
+key: `health_check_interval_seconds`
+value: `60`
+description: `Seconds between health checks`

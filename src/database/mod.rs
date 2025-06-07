@@ -163,6 +163,13 @@ impl DatabaseManager {
                         checked_at TEXT NOT NULL,
                         method_used TEXT NOT NULL
                     );
+                    CREATE TABLE IF NOT EXISTS settings (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL,
+                        description TEXT,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    );
                 "#.to_string(),
             },
         ]

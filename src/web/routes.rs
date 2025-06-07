@@ -17,4 +17,11 @@ pub fn create_routes() -> Router<AppState> {
         .route("/web/routes/{*path}", delete(handlers::delete_route))
         .route("/web/routes/clear-health/{*path}", post(handlers::clear_route_health_status))
         .route("/web/metrics", get(handlers::metrics_view))
+        // Settings routes
+        .route("/web/settings", get(handlers::settings_view))
+        .route("/web/settings/add-form", get(handlers::add_setting_form))
+        .route("/web/settings/add", post(handlers::add_setting_submit))
+        .route("/web/settings/edit/{key}", get(handlers::edit_setting_form))
+        .route("/web/settings/edit/{key}", post(handlers::edit_setting_submit))
+        .route("/web/settings/{key}", delete(handlers::delete_setting))
 }

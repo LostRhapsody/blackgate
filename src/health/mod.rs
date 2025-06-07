@@ -88,7 +88,7 @@ impl HealthCheckMethod {
 #[derive(Debug)]
 pub struct HealthCheckResult {
     pub path: String,
-    pub status: HealthStatus,
+    pub health_check_status: HealthStatus,
     pub response_time_ms: Option<u64>,
     pub error_message: Option<String>,
     pub checked_at: chrono::DateTime<Utc>,
@@ -172,7 +172,7 @@ impl HealthChecker {
                     info!(
                         "Health check for {} completed: {} ({}ms, method: {})",
                         health_result.path,
-                        health_result.status.to_string(),
+                        health_result.health_check_status.to_string(),
                         health_result.response_time_ms.unwrap_or(0),
                         health_result.method_used.to_string()
                     );
@@ -195,11 +195,11 @@ impl HealthChecker {
             debug!("Checking health endpoint for route {}: {}", route.path, health_endpoint);
 
             match self.check_health_endpoint(health_endpoint).await {
-                Ok(status) => {
+                Ok(health_check_status) => {
                     let response_time = start_time.elapsed().as_millis() as u64;
                     return Ok(HealthCheckResult {
                         path: route.path.clone(),
-                        status,
+                        health_check_status,
                         response_time_ms: Some(response_time),
                         error_message: None,
                         checked_at: Utc::now(),
@@ -217,11 +217,11 @@ impl HealthChecker {
             debug!("Checking upstream with HEAD request for route {}: {}", route.path, route.upstream);
 
             match self.check_with_head_request(&route.upstream).await {
-                Ok(status) => {
+                Ok(health_check_status) => {
                     let response_time = start_time.elapsed().as_millis() as u64;
                     Ok(HealthCheckResult {
                         path: route.path.clone(),
-                        status,
+                        health_check_status,
                         response_time_ms: Some(response_time),
                         error_message: None,
                         checked_at: Utc::now(),
@@ -241,7 +241,7 @@ impl HealthChecker {
                         let response_time = start_time.elapsed().as_millis() as u64;
                         Ok(HealthCheckResult {
                             path: route.path.clone(),
-                            status: HealthStatus::Unavailable,
+                            health_check_status: HealthStatus::Unavailable,
                             response_time_ms: Some(response_time),
                             error_message: Some("HEAD method not allowed".to_string()),
                             checked_at: Utc::now(),
@@ -251,7 +251,7 @@ impl HealthChecker {
                         let response_time = start_time.elapsed().as_millis() as u64;
                         Ok(HealthCheckResult {
                             path: route.path.clone(),
-                            status: HealthStatus::Unhealthy,
+                            health_check_status: HealthStatus::Unhealthy,
                             response_time_ms: Some(response_time),
                             error_message: Some(e.to_string()),
                             checked_at: Utc::now(),
@@ -265,7 +265,7 @@ impl HealthChecker {
             debug!("Skipping health check for route {} (marked as unavailable)", route.path);
             Ok(HealthCheckResult {
                 path: route.path.clone(),
-                status: HealthStatus::Unavailable,
+                health_check_status: HealthStatus::Unavailable,
                 response_time_ms: None,
                 error_message: Some("Health check unavailable".to_string()),
                 checked_at: Utc::now(),
@@ -352,11 +352,11 @@ impl HealthChecker {
     async fn store_health_result(&self, result: &HealthCheckResult) -> Result<(), sqlx::Error> {
         sqlx::query(
             "INSERT OR REPLACE INTO route_health_checks
-             (path, status, response_time_ms, error_message, checked_at, method_used)
+             (path, health_check_status, response_time_ms, error_message, checked_at, method_used)
              VALUES (?, ?, ?, ?, ?, ?)"
         )
         .bind(&result.path)
-        .bind(result.status.to_string())
+        .bind(result.health_check_status.to_string())
         .bind(result.response_time_ms.map(|t| t as i64))
         .bind(&result.error_message)
         .bind(result.checked_at.to_rfc3339())

@@ -23,6 +23,7 @@ Current Progress: 15%
 - Rate Limiting - Configurable per-minute and per-hour rate limits for each route
 - Database schema migrations, mostly for developers on The Black Gate Project, useful for customized forks as well
 - Health Checks for endpoints
+- Customizable defaults for health check interval and rate limites
 - Dockerfile included for containerization to self-host
 
 ## Current WIP Feature
@@ -32,7 +33,6 @@ Current Progress: 15%
 We currently support health checks every 60 seconds, using either a dedicated health check endpoint or a "HEAD" request. The status of the check is displayed on the routes page. Remaining features to implement:
 - Trigger a health check from the Routes page, instead of waiting.
 - Using these in the backup endpoint mechanism, which has not started yet.
-- Configurable check frequency, instead of only 60 seconds.
 - Additional states (degraded performance, only applicable to endpoints with real health checks)
 - Integration with the metrics system
 - Alerts via a webhook or other notification system (TBD)
@@ -324,6 +324,16 @@ curl http://localhost:3000/rate-test  # Should return 429 Too Many Requests
 # Settings
 
 Health Check Interval
-key: `health_check_interval_seconds`
-value: `60`
-description: `Seconds between health checks`
+- key: `health_check_interval_seconds`
+- value: `60`
+- description: `Seconds between health checks`
+
+Default Rate Limits Per Mintues
+- key: `default_rate_limit_per_minute`
+- value: `60`
+- description: `Default rate limit per minute for new routes`
+
+Default Rate Limits Per Hour
+- key: `default_rate_limit_per_hour`
+- value: `1000`
+- description: `Default rate limit per hour for new routes`

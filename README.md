@@ -25,14 +25,6 @@ Current Progress: 15%
 - Health Checks for endpoints
 - Dockerfile included for containerization to self-host
 
-## Current Focus
-
-**Database schema planning and clean up**
-
-During development, the database schema has gotten several migrations, many of which were just done to test the migration feature.
-
-Schema needs to be reviewied and simplified so we can keep what we need and toss what we don't, start fresh with a new database.
-
 ## Current WIP Feature
 
 **Health Check Updates**

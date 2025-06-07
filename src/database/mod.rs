@@ -120,6 +120,7 @@ impl DatabaseManager {
                         auth_value TEXT,
                         allowed_methods TEXT,
                         upstream TEXT NOT NULL,
+                        backup_route_path TEXT,
                         oauth_token_url TEXT,
                         oauth_client_id TEXT,
                         oauth_client_secret TEXT,

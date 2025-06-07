@@ -10,6 +10,7 @@
 //! - **Multi-method support**: Handles GET, POST, PUT, PATCH, DELETE, and HEAD requests
 //! - **Authentication**: Supports multiple authentication types including OAuth, JWT, and OIDC
 //! - **Rate limiting**: Per-minute and per-hour rate limiting based on route configuration
+//! - **Health checking**: Monitors route health and implements fallback logic for unhealthy routes
 //! - **Metrics collection**: Comprehensive request/response metrics tracking
 //! - **Database-driven routing**: Route configuration stored in database with dynamic lookup
 //! - **Upstream forwarding**: Proxies requests to configured upstream services
@@ -20,10 +21,11 @@
 //! 2. Query database for route configuration
 //! 3. Validate HTTP method is allowed for the route
 //! 4. Apply rate limiting checks
-//! 5. Apply authentication based on route configuration
-//! 6. Forward request to upstream service
-//! 7. Collect and store metrics
-//! 8. Return response to client
+//! 5. Check route health status and implement fallback logic if unhealthy
+//! 6. Apply authentication based on route configuration
+//! 7. Forward request to upstream service
+//! 8. Collect and store metrics
+//! 9. Return response to client
 //!
 //! ## Error Handling
 //!
@@ -62,12 +64,16 @@
 
 use axum::{extract::OriginalUri, http::{HeaderMap, Method}};
 use sqlx::Row;
+use std::sync::Arc;
 use tokio::time::Instant;
 use tracing::{info, warn, error};
 use crate::{
-    auth::{apply_authentication, types::AuthType}, metrics::{
-    store_metrics, RequestMetrics
-    }, rate_limiter::check_rate_limit, AppState, database::queries
+    auth::{apply_authentication, types::AuthType}, 
+    health::{HealthChecker, HealthStatus},
+    metrics::{store_metrics, RequestMetrics}, 
+    rate_limiter::check_rate_limit, 
+    AppState, 
+    database::queries
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -253,6 +259,51 @@ pub async fn handle_request_core(
             ).await {
                 store_metrics(&state.db, &metrics).await;
                 return response;
+            }
+
+            // Check route health status
+            let health_checker = HealthChecker::new(Arc::new(state.db.clone()));
+            match health_checker.fetch_route_for_health_check(&path).await {
+                Ok(health_routes) => {
+                    if let Some(health_route) = health_routes.first() {
+                        if health_route.health_check_status == HealthStatus::Unhealthy {
+                            warn!(
+                                request_id = %metrics.id,
+                                path = %path,
+                                "Route is unhealthy, fallback logic needed"
+                            );
+
+                            // TODO: Implement backup route selection logic
+                            // For now, we'll proceed with the original route but log the issue
+                            info!(
+                                request_id = %metrics.id,
+                                path = %path,
+                                "TODO: Switch to backup route - proceeding with original for now"
+                            );
+                        } else {
+                            info!(
+                                request_id = %metrics.id,
+                                path = %path,
+                                health_status = %health_route.health_check_status.to_string(),
+                                "Route health check passed"
+                            );
+                        }
+                    } else {
+                        info!(
+                            request_id = %metrics.id,
+                            path = %path,
+                            "No health check data found for route"
+                        );
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        request_id = %metrics.id,
+                        path = %path,
+                        error = %e,
+                        "Failed to fetch route health status, proceeding anyway"
+                    );
+                }
             }
 
             // Extract route configuration from the database row

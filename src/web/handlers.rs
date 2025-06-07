@@ -23,6 +23,7 @@ pub struct MetricsQuery {
 pub struct RouteFormData {
     path: String,
     upstream: String,
+    backup_route_path: Option<String>,
     auth_type: String,
     auth_value: Option<String>,
     allowed_methods: Option<String>,
@@ -222,6 +223,11 @@ fn generate_route_form(is_edit: bool, path: &str, form_data: RouteFormData) -> S
                 </div>
 
                 <div>
+                    <label for="backup_route_path">Backup Route Path (optional):</label><br>
+                    <input type="text" id="backup_route_path" name="backup_route_path" value="{}" placeholder="/api/backup">
+                </div>
+
+                <div>
                     <label for="auth_type">Authentication Type:</label><br>
                     <select id="auth_type" name="auth_type" hx-trigger="change" hx-target="#auth-fields" hx-get="/web/routes/auth-fields?auth_type={}" hx-swap="innerHTML">
                         <option value="none"{}>None</option>
@@ -262,6 +268,7 @@ fn generate_route_form(is_edit: bool, path: &str, form_data: RouteFormData) -> S
         action,
         form_data.path,
         form_data.upstream,
+        form_data.backup_route_path.as_deref().unwrap_or(""),
         form_data.auth_type,
         if auth_type == AuthType::None { " selected" } else { "" },
         if auth_type == AuthType::ApiKey { " selected" } else { "" },
@@ -748,6 +755,7 @@ pub async fn edit_route_form(State(state): State<AppState>, Path(path): Path<Str
     let form_data = RouteFormData {
         path: row.get("path"),
         upstream: row.get("upstream"),
+        backup_route_path: Some(row.get("backup_route_path")),
         auth_type: row.get("auth_type"),
         auth_value: Some(row.get("auth_value")),
         allowed_methods: Some(row.get("allowed_methods")),
@@ -780,6 +788,7 @@ pub async fn add_route_submit(State(state): State<AppState>, Form(form): Form<Ro
         &state.db,
         &form.path,
         &form.upstream,
+        &form.backup_route_path.unwrap_or_default(),
         &auth_type_enum,
         &form.auth_value.unwrap_or_default(),
         &form.allowed_methods.unwrap_or_default(),
@@ -832,6 +841,7 @@ pub async fn edit_route_submit(State(state): State<AppState>, Path(path): Path<S
         &state.db,
         &form.path,
         &form.upstream,
+        &form.backup_route_path.unwrap_or_default(),
         &auth_type_enum,
         &form.auth_value.unwrap_or_default(),
         &form.allowed_methods.unwrap_or_default(),

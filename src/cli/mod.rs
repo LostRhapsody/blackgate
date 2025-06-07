@@ -101,6 +101,8 @@ enum Commands {
         path: String,
         #[arg(long)]
         upstream: String,
+        #[arg(long, help = "Backup route path (optional)")]
+        backup_route_path: Option<String>,
         #[arg(long)]
         auth_type: Option<String>,
         #[arg(long)]
@@ -220,6 +222,7 @@ pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
         Commands::AddRoute {
             path,
             upstream,
+            backup_route_path,
             auth_type,
             auth_value,
             allowed_methods,
@@ -251,6 +254,7 @@ pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
                     *pool,
                     &path,
                     &upstream,
+                    &backup_route_path.unwrap_or_else(|| "".into()),
                     &auth_type_enum,
                     &auth_value.unwrap_or_else(|| "".into()),
                     &allowed_methods.unwrap_or_else(|| "".into()),

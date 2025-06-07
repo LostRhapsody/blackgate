@@ -215,7 +215,7 @@ fn generate_auth_fields(auth_type: AuthType, form_data: &RouteFormData) -> Strin
     }
 }
 
-fn generate_route_form(is_edit: bool, path: &str, form_data: RouteFormData) -> String {
+fn generate_route_form(is_edit: bool, path: &str, form_data: RouteFormData, collections: Vec<sqlx::sqlite::SqliteRow>) -> String {
     let (title, action, submit_text) = if is_edit {
         (
             format!("Edit Route: {}", path),
@@ -232,6 +232,18 @@ fn generate_route_form(is_edit: bool, path: &str, form_data: RouteFormData) -> S
 
     let auth_fields = generate_auth_fields(AuthType::from_str(&form_data.auth_type), &form_data);
     let auth_type = AuthType::from_str(&form_data.auth_type);
+
+    // Generate collection options HTML
+    let mut collection_options = String::from("<option value=\"\">No Collection</option>");
+    for collection in collections {
+        let id: i64 = collection.get("id");
+        let name: String = collection.get("name");
+        let selected = if form_data.collection_id == Some(id) { " selected" } else { "" };
+        collection_options.push_str(&format!(
+            "<option value=\"{}\"{}>{}</option>",
+            id, selected, name
+        ));
+    }
 
     format!(
         r##"
@@ -250,6 +262,13 @@ fn generate_route_form(is_edit: bool, path: &str, form_data: RouteFormData) -> S
                 <div>
                     <label for="backup_route_path">Backup Route Path (optional):</label><br>
                     <input type="text" id="backup_route_path" name="backup_route_path" value="{}" placeholder="/api/backup">
+                </div>
+
+                <div>
+                    <label for="collection_id">Collection (optional):</label><br>
+                    <select id="collection_id" name="collection_id">
+                        {}
+                    </select>
                 </div>
 
                 <div>
@@ -294,6 +313,7 @@ fn generate_route_form(is_edit: bool, path: &str, form_data: RouteFormData) -> S
         form_data.path,
         form_data.upstream,
         form_data.backup_route_path.as_deref().unwrap_or(""),
+        collection_options,
         form_data.auth_type,
         if auth_type == AuthType::None { " selected" } else { "" },
         if auth_type == AuthType::ApiKey { " selected" } else { "" },
@@ -713,6 +733,10 @@ pub async fn auth_fields_form(Query(params): Query<std::collections::HashMap<Str
 }
 
 pub async fn add_route_form(State(state): State<AppState>) -> Html<String> {
+    // Fetch available collections
+    let collections = queries::fetch_all_route_collections(&state.db)
+        .await
+        .unwrap_or_default();
 
     // fetch the rate limit defaults from the DB
     let row = queries::get_setting_by_key(&state.db, "default_rate_limit_per_hour")        
@@ -764,10 +788,15 @@ pub async fn add_route_form(State(state): State<AppState>) -> Html<String> {
         rate_limit_per_hour: Some(default_rate_limit_per_hour),
         ..Default::default()
     };
-    Html(generate_route_form(false, "", form_data))
+    Html(generate_route_form(false, "", form_data, collections))
 }
 
 pub async fn edit_route_form(State(state): State<AppState>, Path(path): Path<String>) -> Result<Html<String>, StatusCode> {
+    // Fetch available collections
+    let collections = queries::fetch_all_route_collections(&state.db)
+        .await
+        .unwrap_or_default();
+
     let row = queries::fetch_route_by_path_for_edit(&state.db, &path)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -804,7 +833,7 @@ pub async fn edit_route_form(State(state): State<AppState>, Path(path): Path<Str
         health_endpoint: Some(row.get("health_endpoint")),
     };
 
-    Ok(Html(generate_route_form(true, &path, form_data)))
+    Ok(Html(generate_route_form(true, &path, form_data, collections)))
 }
 
 pub async fn add_route_submit(State(state): State<AppState>, Form(form): Form<RouteFormData>) -> Result<Html<String>, StatusCode> {
@@ -1195,11 +1224,9 @@ pub async fn collections_list(State(state): State<AppState>) -> Html<String> {
 
     let mut html = String::new();
     html.push_str(r##"
+        <h2>Route Collections</h2>
         <div class="header-section">
-            <h2>Route Collections</h2>
-            <button class="btn-primary" hx-get="/web/collections/add-form" hx-target="#modal-content" hx-trigger="click" onclick="openModal()">
-                Add Collection
-            </button>
+            <button hx-get="/web/collections/add-form" hx-target="#content" hx-swap="innerHTML">Add Collection</button>
         </div>
         <div class="table-container">
             <table class="data-table">
@@ -1234,10 +1261,10 @@ pub async fn collections_list(State(state): State<AppState>) -> Html<String> {
                     <td>{}/min, {}/hr</td>
                     <td>{}</td>
                     <td class="action-buttons">
-                        <button class="btn-secondary" hx-get="/web/collections/{}/routes" hx-target="#main-content">View Routes</button>
-                        <button class="btn-secondary" hx-get="/web/collections/edit/{}" hx-target="#modal-content" hx-trigger="click" onclick="openModal()">Edit</button>
-                        <button class="btn-secondary" hx-post="/web/collections/{}/apply-defaults" hx-target="#main-content">Apply Defaults</button>
-                        <button class="btn-danger" hx-delete="/web/collections/{}" hx-target="#main-content" hx-confirm="Are you sure you want to delete this collection?">Delete</button>
+                        <button hx-get="/web/collections/{}/routes" hx-target="#content" hx-swap="innerHTML">View Routes</button>
+                        <button hx-get="/web/collections/edit/{}" hx-target="#content" hx-swap="innerHTML">Edit</button>
+                        <button hx-post="/web/collections/{}/apply-defaults" hx-target="#content" hx-swap="innerHTML" hx-confirm="Apply collection defaults to all routes in this collection?">Apply Defaults</button>
+                        <button hx-delete="/web/collections/{}" hx-target="#content" hx-swap="innerHTML" hx-confirm="Are you sure you want to delete this collection?">Delete</button>
                     </td>
                 </tr>
             "##,
@@ -1250,52 +1277,48 @@ pub async fn collections_list(State(state): State<AppState>) -> Html<String> {
 }
 
 pub async fn add_collection_form() -> Html<String> {
-    Html(r##"
-        <div class="modal-header">
-            <h3>Add New Collection</h3>
-            <button class="modal-close" onclick="closeModal()">&times;</button>
-        </div>
-        <form hx-post="/web/collections/add" hx-target="#main-content" hx-on::after-request="closeModal()">
-            <div class="form-grid">
-                <div class="form-group">
-                    <label for="name">Collection Name</label>
-                    <input type="text" id="name" name="name" placeholder="e.g., api_v1" required>
-                </div>
-                <div class="form-group">
-                    <label for="description">Description</label>
-                    <input type="text" id="description" name="description" placeholder="Brief description of this collection">
-                </div>
-                <div class="form-group">
-                    <label for="default_auth_type">Default Authentication Type</label>
-                    <select id="default_auth_type" name="default_auth_type">
-                        <option value="none">None</option>
-                        <option value="basic">Basic Auth</option>
-                        <option value="bearer">Bearer Token</option>
-                        <option value="api-key">API Key</option>
-                        <option value="oauth">OAuth 2.0</option>
-                        <option value="jwt">JWT</option>
-                        <option value="oidc">OIDC</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="default_auth_value">Default Auth Value</label>
-                    <input type="text" id="default_auth_value" name="default_auth_value" placeholder="Default auth value (optional)">
-                </div>
-                <div class="form-group">
-                    <label for="default_rate_limit_per_minute">Default Rate Limit (per minute)</label>
-                    <input type="number" id="default_rate_limit_per_minute" name="default_rate_limit_per_minute" value="60" min="1">
-                </div>
-                <div class="form-group">
-                    <label for="default_rate_limit_per_hour">Default Rate Limit (per hour)</label>
-                    <input type="number" id="default_rate_limit_per_hour" name="default_rate_limit_per_hour" value="1000" min="1">
-                </div>
+    let html = r##"
+        <h3>Add New Collection</h3>
+        <form hx-post="/web/collections/add" hx-target="#content" hx-swap="innerHTML">
+            <div>
+                <label for="name">Collection Name:</label><br>
+                <input type="text" id="name" name="name" placeholder="e.g., api_v1" required>
             </div>
-            <div class="modal-actions">
-                <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
-                <button type="submit" class="btn-primary">Add Collection</button>
+            
+            <div>
+                <label for="description">Description:</label><br>
+                <input type="text" id="description" name="description" placeholder="Brief description of this collection">
+            </div>
+            
+            <div>
+                <label for="default_auth_type">Default Authentication Type:</label><br>
+                <select id="default_auth_type" name="default_auth_type">
+                    <option value="none">None</option>
+                    <option value="basic-auth">Basic Auth</option>
+                    <option value="api-key">API Key</option>
+                    <option value="oauth2">OAuth 2.0</option>
+                    <option value="jwt">JWT</option>
+                    <option value="oidc">OIDC</option>
+                </select>
+            </div>
+            
+            <div>
+                <label for="default_rate_limit_per_minute">Default Rate Limit (per minute):</label><br>
+                <input type="number" id="default_rate_limit_per_minute" name="default_rate_limit_per_minute" value="60" min="1">
+            </div>
+            
+            <div>
+                <label for="default_rate_limit_per_hour">Default Rate Limit (per hour):</label><br>
+                <input type="number" id="default_rate_limit_per_hour" name="default_rate_limit_per_hour" value="1000" min="1">
+            </div>
+
+            <div>
+                <button type="submit">Add Collection</button>
+                <button type="button" hx-get="/web/collections" hx-target="#content" hx-swap="innerHTML">Cancel</button>
             </div>
         </form>
-    "##.to_string())
+    "##;
+    Html(html.to_string())
 }
 
 pub async fn add_collection_submit(State(state): State<AppState>, Form(form): Form<RouteCollectionFormData>) -> Result<Html<String>, StatusCode> {

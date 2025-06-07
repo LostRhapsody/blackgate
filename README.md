@@ -43,6 +43,7 @@ We currently support health checks every 60 seconds, using either a dedicated he
 Organize API routes into collections.
 - Manage routes authentication and authorization either by collection or by route
 - Bulk actions such as adding/removing entire collections, or many route configs at once
+- When adding a new route, if it is part of a collection, a message is displayed: "Added authentication to this route will override the route's inherited collection authentication"
 
 **Tenant-based Authorization**
 

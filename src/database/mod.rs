@@ -181,6 +181,56 @@ impl DatabaseManager {
                         ('health_check_interval_seconds', '60', 'Health check interval in seconds, requries restart');                        
                 "#.to_string(),
             },
+            Migration {
+                version: 2,
+                name: "route_collections".to_string(),
+                sql: r#"
+                    -- Route Collections table
+                    CREATE TABLE IF NOT EXISTS route_collections (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT UNIQUE NOT NULL,
+                        description TEXT,
+                        -- Default authentication settings for the collection
+                        default_auth_type TEXT DEFAULT 'none',
+                        default_auth_value TEXT,
+                        -- OAuth defaults
+                        default_oauth_token_url TEXT,
+                        default_oauth_client_id TEXT,
+                        default_oauth_client_secret TEXT,
+                        default_oauth_scope TEXT,
+                        -- JWT defaults
+                        default_jwt_secret TEXT,
+                        default_jwt_algorithm TEXT DEFAULT 'HS256',
+                        default_jwt_issuer TEXT,
+                        default_jwt_audience TEXT,
+                        default_jwt_required_claims TEXT,
+                        -- OIDC defaults
+                        default_oidc_issuer TEXT,
+                        default_oidc_client_id TEXT,
+                        default_oidc_client_secret TEXT,
+                        default_oidc_audience TEXT,
+                        default_oidc_scope TEXT,
+                        -- Default rate limiting
+                        default_rate_limit_per_minute INTEGER DEFAULT 60,
+                        default_rate_limit_per_hour INTEGER DEFAULT 1000,
+                        -- Metadata
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    );
+
+                    -- Add collection_id to routes table (nullable for backward compatibility)
+                    ALTER TABLE routes ADD COLUMN collection_id INTEGER REFERENCES route_collections(id);
+                    
+                    -- Create index for faster lookups
+                    CREATE INDEX IF NOT EXISTS idx_routes_collection_id ON routes(collection_id);
+                    
+                    -- Example collections
+                    INSERT INTO route_collections (name, description, default_auth_type, default_rate_limit_per_minute, default_rate_limit_per_hour) VALUES
+                        ('default', 'Default collection for uncategorized routes', 'none', 60, 1000),
+                        ('api_v1', 'Version 1 API routes', 'jwt', 100, 5000),
+                        ('public_api', 'Public API endpoints', 'api-key', 30, 500);
+                "#.to_string(),
+            },
         ]
     }
 

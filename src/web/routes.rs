@@ -19,6 +19,15 @@ pub fn create_routes() -> Router<AppState> {
         .route("/web/routes/trigger-health", post(handlers::trigger_all_routes_health_check))
         .route("/web/routes/trigger-health/{*path}", post(handlers::trigger_route_health_check))
         .route("/web/metrics", get(handlers::metrics_view))
+        // Collection routes
+        .route("/web/collections", get(handlers::collections_list))
+        .route("/web/collections/add-form", get(handlers::add_collection_form))
+        .route("/web/collections/add", post(handlers::add_collection_submit))
+        .route("/web/collections/edit/{id}", get(handlers::edit_collection_form))
+        .route("/web/collections/edit/{id}", post(handlers::edit_collection_submit))
+        .route("/web/collections/{id}", delete(handlers::delete_collection))
+        .route("/web/collections/{id}/apply-defaults", post(handlers::apply_collection_defaults))
+        .route("/web/collections/{id}/routes", get(handlers::collection_routes_view))
         // Settings routes
         .route("/web/settings", get(handlers::settings_view))
         .route("/web/settings/add-form", get(handlers::add_setting_form))

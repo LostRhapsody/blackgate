@@ -24,6 +24,7 @@ pub async fn insert_or_replace_route(
     path: &str,
     upstream: &str,
     backup_route_path: &str,
+    collection_id: Option<i64>,
     auth_type: &AuthType,
     auth_value: &str,
     allowed_methods: &str,
@@ -47,12 +48,13 @@ pub async fn insert_or_replace_route(
 ) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
     sqlx::query(
         "INSERT OR REPLACE INTO routes
-        (path, upstream, backup_route_path, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, rate_limit_per_minute, rate_limit_per_hour, oidc_issuer, oidc_client_id, oidc_client_secret, oidc_audience, oidc_scope, health_endpoint)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        (path, upstream, backup_route_path, collection_id, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, rate_limit_per_minute, rate_limit_per_hour, oidc_issuer, oidc_client_id, oidc_client_secret, oidc_audience, oidc_scope, health_endpoint)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(path)
     .bind(upstream)
     .bind(backup_route_path)
+    .bind(collection_id)
     .bind(auth_type.to_string())
     .bind(auth_value)
     .bind(allowed_methods)
@@ -120,7 +122,7 @@ pub async fn fetch_route_by_path_for_edit(
     path: &str,
 ) -> Result<Option<sqlx::sqlite::SqliteRow>, sqlx::Error> {
     sqlx::query(
-        "SELECT path, upstream, backup_route_path, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, oidc_issuer, oidc_client_id, oidc_client_secret, oidc_audience, oidc_scope, rate_limit_per_minute, rate_limit_per_hour, health_endpoint FROM routes WHERE path = ?"
+        "SELECT path, upstream, backup_route_path, collection_id, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, oidc_issuer, oidc_client_id, oidc_client_secret, oidc_audience, oidc_scope, rate_limit_per_minute, rate_limit_per_hour, health_endpoint FROM routes WHERE path = ?"
     )
     .bind(path)
     .fetch_optional(pool)
@@ -133,6 +135,7 @@ pub async fn update_route_by_path(
     new_path: &str,
     upstream: &str,
     backup_route_path: &str,
+    collection_id: Option<i64>,
     auth_type: &AuthType,
     auth_value: &str,
     allowed_methods: &str,
@@ -157,7 +160,7 @@ pub async fn update_route_by_path(
 ) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
     sqlx::query(
         "UPDATE routes SET
-        path = ?, upstream = ?, backup_route_path = ?, auth_type = ?, auth_value = ?, allowed_methods = ?,
+        path = ?, upstream = ?, backup_route_path = ?, collection_id = ?, auth_type = ?, auth_value = ?, allowed_methods = ?,
         oauth_token_url = ?, oauth_client_id = ?, oauth_client_secret = ?, oauth_scope = ?,
         jwt_secret = ?, jwt_algorithm = ?, jwt_issuer = ?, jwt_audience = ?, jwt_required_claims = ?,
         oidc_issuer = ?, oidc_client_id = ?, oidc_client_secret = ?, oidc_audience = ?, oidc_scope = ?,
@@ -167,6 +170,7 @@ pub async fn update_route_by_path(
     .bind(new_path)
     .bind(upstream)
     .bind(backup_route_path)
+    .bind(collection_id)
     .bind(auth_type.to_string())
     .bind(auth_value)
     .bind(allowed_methods)
@@ -383,4 +387,287 @@ pub async fn get_all_settings(pool: &SqlitePool) -> Result<Vec<sqlx::sqlite::Sql
     sqlx::query("SELECT key, value, description, created_at, updated_at FROM settings ORDER BY key")
         .fetch_all(pool)
         .await
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//****                    Route Collections Queries                      ****//
+///////////////////////////////////////////////////////////////////////////////
+
+/// Fetch all route collections
+pub async fn fetch_all_route_collections(
+    pool: &SqlitePool,
+) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
+    sqlx::query("SELECT id, name, description, default_auth_type, default_rate_limit_per_minute, default_rate_limit_per_hour, created_at FROM route_collections ORDER BY name")
+        .fetch_all(pool)
+        .await
+}
+
+/// Fetch a single route collection by ID
+pub async fn fetch_route_collection_by_id(
+    pool: &SqlitePool,
+    collection_id: i64,
+) -> Result<Option<sqlx::sqlite::SqliteRow>, sqlx::Error> {
+    sqlx::query("SELECT * FROM route_collections WHERE id = ?")
+        .bind(collection_id)
+        .fetch_optional(pool)
+        .await
+}
+
+/// Fetch a single route collection by name
+pub async fn fetch_route_collection_by_name(
+    pool: &SqlitePool,
+    name: &str,
+) -> Result<Option<sqlx::sqlite::SqliteRow>, sqlx::Error> {
+    sqlx::query("SELECT * FROM route_collections WHERE name = ?")
+        .bind(name)
+        .fetch_optional(pool)
+        .await
+}
+
+/// Insert a new route collection
+pub async fn insert_route_collection(
+    pool: &SqlitePool,
+    name: &str,
+    description: &str,
+    default_auth_type: &AuthType,
+    default_auth_value: &str,
+    default_oauth_token_url: &str,
+    default_oauth_client_id: &str,
+    default_oauth_client_secret: &str,
+    default_oauth_scope: &str,
+    default_jwt_secret: &str,
+    default_jwt_algorithm: &str,
+    default_jwt_issuer: &str,
+    default_jwt_audience: &str,
+    default_jwt_required_claims: &str,
+    default_oidc_issuer: &str,
+    default_oidc_client_id: &str,
+    default_oidc_client_secret: &str,
+    default_oidc_audience: &str,
+    default_oidc_scope: &str,
+    default_rate_limit_per_minute: u32,
+    default_rate_limit_per_hour: u32,
+) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO route_collections (
+            name, description, default_auth_type, default_auth_value,
+            default_oauth_token_url, default_oauth_client_id, default_oauth_client_secret, default_oauth_scope,
+            default_jwt_secret, default_jwt_algorithm, default_jwt_issuer, default_jwt_audience, default_jwt_required_claims,
+            default_oidc_issuer, default_oidc_client_id, default_oidc_client_secret, default_oidc_audience, default_oidc_scope,
+            default_rate_limit_per_minute, default_rate_limit_per_hour
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    .bind(name)
+    .bind(description)
+    .bind(default_auth_type.to_string())
+    .bind(default_auth_value)
+    .bind(default_oauth_token_url)
+    .bind(default_oauth_client_id)
+    .bind(default_oauth_client_secret)
+    .bind(default_oauth_scope)
+    .bind(default_jwt_secret)
+    .bind(default_jwt_algorithm)
+    .bind(default_jwt_issuer)
+    .bind(default_jwt_audience)
+    .bind(default_jwt_required_claims)
+    .bind(default_oidc_issuer)
+    .bind(default_oidc_client_id)
+    .bind(default_oidc_client_secret)
+    .bind(default_oidc_audience)
+    .bind(default_oidc_scope)
+    .bind(default_rate_limit_per_minute)
+    .bind(default_rate_limit_per_hour)
+    .execute(pool)
+    .await
+}
+
+/// Update a route collection
+pub async fn update_route_collection(
+    pool: &SqlitePool,
+    collection_id: i64,
+    name: &str,
+    description: &str,
+    default_auth_type: &AuthType,
+    default_auth_value: &str,
+    default_oauth_token_url: &str,
+    default_oauth_client_id: &str,
+    default_oauth_client_secret: &str,
+    default_oauth_scope: &str,
+    default_jwt_secret: &str,
+    default_jwt_algorithm: &str,
+    default_jwt_issuer: &str,
+    default_jwt_audience: &str,
+    default_jwt_required_claims: &str,
+    default_oidc_issuer: &str,
+    default_oidc_client_id: &str,
+    default_oidc_client_secret: &str,
+    default_oidc_audience: &str,
+    default_oidc_scope: &str,
+    default_rate_limit_per_minute: u32,
+    default_rate_limit_per_hour: u32,
+) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+    sqlx::query(
+        "UPDATE route_collections SET
+            name = ?, description = ?, default_auth_type = ?, default_auth_value = ?,
+            default_oauth_token_url = ?, default_oauth_client_id = ?, default_oauth_client_secret = ?, default_oauth_scope = ?,
+            default_jwt_secret = ?, default_jwt_algorithm = ?, default_jwt_issuer = ?, default_jwt_audience = ?, default_jwt_required_claims = ?,
+            default_oidc_issuer = ?, default_oidc_client_id = ?, default_oidc_client_secret = ?, default_oidc_audience = ?, default_oidc_scope = ?,
+            default_rate_limit_per_minute = ?, default_rate_limit_per_hour = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?"
+    )
+    .bind(name)
+    .bind(description)
+    .bind(default_auth_type.to_string())
+    .bind(default_auth_value)
+    .bind(default_oauth_token_url)
+    .bind(default_oauth_client_id)
+    .bind(default_oauth_client_secret)
+    .bind(default_oauth_scope)
+    .bind(default_jwt_secret)
+    .bind(default_jwt_algorithm)
+    .bind(default_jwt_issuer)
+    .bind(default_jwt_audience)
+    .bind(default_jwt_required_claims)
+    .bind(default_oidc_issuer)
+    .bind(default_oidc_client_id)
+    .bind(default_oidc_client_secret)
+    .bind(default_oidc_audience)
+    .bind(default_oidc_scope)
+    .bind(default_rate_limit_per_minute)
+    .bind(default_rate_limit_per_hour)
+    .bind(collection_id)
+    .execute(pool)
+    .await
+}
+
+/// Delete a route collection
+pub async fn delete_route_collection(
+    pool: &SqlitePool,
+    collection_id: i64,
+) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+    sqlx::query("DELETE FROM route_collections WHERE id = ?")
+        .bind(collection_id)
+        .execute(pool)
+        .await
+}
+
+/// Fetch routes grouped by collection
+pub async fn fetch_routes_by_collection(
+    pool: &SqlitePool,
+) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
+    sqlx::query(
+        "SELECT 
+            r.path, r.upstream, r.auth_type, r.rate_limit_per_minute, r.rate_limit_per_hour,
+            r.collection_id,
+            c.name as collection_name,
+            c.description as collection_description,
+            h.health_check_status
+         FROM routes r
+         LEFT JOIN route_collections c ON r.collection_id = c.id
+         LEFT JOIN (
+             SELECT path, health_check_status,
+                    ROW_NUMBER() OVER (PARTITION BY path ORDER BY checked_at DESC) as rn
+             FROM route_health_checks
+         ) h ON r.path = h.path AND h.rn = 1
+         ORDER BY c.name, r.path"
+    )
+    .fetch_all(pool)
+    .await
+}
+
+/// Fetch routes for a specific collection
+pub async fn fetch_routes_in_collection(
+    pool: &SqlitePool,
+    collection_id: i64,
+) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
+    sqlx::query(
+        "SELECT r.path, r.upstream, r.auth_type, r.rate_limit_per_minute, r.rate_limit_per_hour,
+                h.health_check_status
+         FROM routes r
+         LEFT JOIN (
+             SELECT path, health_check_status,
+                    ROW_NUMBER() OVER (PARTITION BY path ORDER BY checked_at DESC) as rn
+             FROM route_health_checks
+         ) h ON r.path = h.path AND h.rn = 1
+         WHERE r.collection_id = ?
+         ORDER BY r.path"
+    )
+    .bind(collection_id)
+    .fetch_all(pool)
+    .await
+}
+
+/// Assign a route to a collection
+pub async fn assign_route_to_collection(
+    pool: &SqlitePool,
+    route_path: &str,
+    collection_id: i64,
+) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+    sqlx::query("UPDATE routes SET collection_id = ? WHERE path = ?")
+        .bind(collection_id)
+        .bind(route_path)
+        .execute(pool)
+        .await
+}
+
+/// Remove a route from its collection
+pub async fn remove_route_from_collection(
+    pool: &SqlitePool,
+    route_path: &str,
+) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+    sqlx::query("UPDATE routes SET collection_id = NULL WHERE path = ?")
+        .bind(route_path)
+        .execute(pool)
+        .await
+}
+
+/// Apply collection defaults to routes without specific auth configured
+pub async fn apply_collection_defaults_to_routes(
+    pool: &SqlitePool,
+    collection_id: i64,
+) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+    sqlx::query(
+        "UPDATE routes SET
+            auth_type = (SELECT default_auth_type FROM route_collections WHERE id = ?),
+            auth_value = (SELECT default_auth_value FROM route_collections WHERE id = ?),
+            oauth_token_url = (SELECT default_oauth_token_url FROM route_collections WHERE id = ?),
+            oauth_client_id = (SELECT default_oauth_client_id FROM route_collections WHERE id = ?),
+            oauth_client_secret = (SELECT default_oauth_client_secret FROM route_collections WHERE id = ?),
+            oauth_scope = (SELECT default_oauth_scope FROM route_collections WHERE id = ?),
+            jwt_secret = (SELECT default_jwt_secret FROM route_collections WHERE id = ?),
+            jwt_algorithm = (SELECT default_jwt_algorithm FROM route_collections WHERE id = ?),
+            jwt_issuer = (SELECT default_jwt_issuer FROM route_collections WHERE id = ?),
+            jwt_audience = (SELECT default_jwt_audience FROM route_collections WHERE id = ?),
+            jwt_required_claims = (SELECT default_jwt_required_claims FROM route_collections WHERE id = ?),
+            oidc_issuer = (SELECT default_oidc_issuer FROM route_collections WHERE id = ?),
+            oidc_client_id = (SELECT default_oidc_client_id FROM route_collections WHERE id = ?),
+            oidc_client_secret = (SELECT default_oidc_client_secret FROM route_collections WHERE id = ?),
+            oidc_audience = (SELECT default_oidc_audience FROM route_collections WHERE id = ?),
+            oidc_scope = (SELECT default_oidc_scope FROM route_collections WHERE id = ?),
+            rate_limit_per_minute = (SELECT default_rate_limit_per_minute FROM route_collections WHERE id = ?),
+            rate_limit_per_hour = (SELECT default_rate_limit_per_hour FROM route_collections WHERE id = ?)
+        WHERE collection_id = ? AND (auth_type = 'none' OR auth_type = '')"
+    )
+    .bind(collection_id)
+    .bind(collection_id)
+    .bind(collection_id)
+    .bind(collection_id)
+    .bind(collection_id)
+    .bind(collection_id)
+    .bind(collection_id)
+    .bind(collection_id)
+    .bind(collection_id)
+    .bind(collection_id)
+    .bind(collection_id)
+    .bind(collection_id)
+    .bind(collection_id)
+    .bind(collection_id)
+    .bind(collection_id)
+    .bind(collection_id)
+    .bind(collection_id)
+    .bind(collection_id)
+    .bind(collection_id)
+    .execute(pool)
+    .await
 }

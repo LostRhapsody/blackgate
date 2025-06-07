@@ -24,6 +24,7 @@ pub struct RouteFormData {
     path: String,
     upstream: String,
     backup_route_path: Option<String>,
+    collection_id: Option<i64>,
     auth_type: String,
     auth_value: Option<String>,
     allowed_methods: Option<String>,
@@ -44,6 +45,30 @@ pub struct RouteFormData {
     rate_limit_per_minute: Option<u32>,
     rate_limit_per_hour: Option<u32>,
     health_endpoint: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct RouteCollectionFormData {
+    name: String,
+    description: Option<String>,
+    default_auth_type: String,
+    default_auth_value: Option<String>,
+    default_oauth_token_url: Option<String>,
+    default_oauth_client_id: Option<String>,
+    default_oauth_client_secret: Option<String>,
+    default_oauth_scope: Option<String>,
+    default_jwt_secret: Option<String>,
+    default_jwt_algorithm: Option<String>,
+    default_jwt_issuer: Option<String>,
+    default_jwt_audience: Option<String>,
+    default_jwt_required_claims: Option<String>,
+    default_oidc_issuer: Option<String>,
+    default_oidc_client_id: Option<String>,
+    default_oidc_client_secret: Option<String>,
+    default_oidc_audience: Option<String>,
+    default_oidc_scope: Option<String>,
+    default_rate_limit_per_minute: Option<u32>,
+    default_rate_limit_per_hour: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -756,6 +781,7 @@ pub async fn edit_route_form(State(state): State<AppState>, Path(path): Path<Str
         path: row.get("path"),
         upstream: row.get("upstream"),
         backup_route_path: Some(row.get("backup_route_path")),
+        collection_id: row.get("collection_id"),
         auth_type: row.get("auth_type"),
         auth_value: Some(row.get("auth_value")),
         allowed_methods: Some(row.get("allowed_methods")),
@@ -789,6 +815,7 @@ pub async fn add_route_submit(State(state): State<AppState>, Form(form): Form<Ro
         &form.path,
         &form.upstream,
         &form.backup_route_path.unwrap_or_default(),
+        form.collection_id,
         &auth_type_enum,
         &form.auth_value.unwrap_or_default(),
         &form.allowed_methods.unwrap_or_default(),
@@ -842,6 +869,7 @@ pub async fn edit_route_submit(State(state): State<AppState>, Path(path): Path<S
         &form.path,
         &form.upstream,
         &form.backup_route_path.unwrap_or_default(),
+        form.collection_id,
         &auth_type_enum,
         &form.auth_value.unwrap_or_default(),
         &form.allowed_methods.unwrap_or_default(),
@@ -1150,4 +1178,204 @@ pub async fn delete_setting(State(state): State<AppState>, Path(key): Path<Strin
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//****                   Collection Management Handlers                  ****//
+///////////////////////////////////////////////////////////////////////////////
+
+pub async fn collections_list(State(state): State<AppState>) -> Html<String> {
+    let collections = match queries::fetch_all_route_collections(&state.db).await {
+        Ok(collections) => collections,
+        Err(e) => {
+            error!("Failed to fetch collections: {}", e);
+            return Html("<div class='error'>Failed to load collections</div>".to_string());
+        }
+    };
+
+    let mut html = String::new();
+    html.push_str(r##"
+        <div class="header-section">
+            <h2>Route Collections</h2>
+            <button class="btn-primary" hx-get="/web/collections/add-form" hx-target="#modal-content" hx-trigger="click" onclick="openModal()">
+                Add Collection
+            </button>
+        </div>
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th>Default Auth</th>
+                        <th>Rate Limits</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+    "##);
+
+    for collection in collections {
+        let id: i64 = collection.get("id");
+        let name: String = collection.get("name");
+        let description: String = collection.get::<Option<String>, _>("description").unwrap_or_default();
+        let default_auth_type: String = collection.get("default_auth_type");
+        let default_rate_limit_per_minute: i64 = collection.get("default_rate_limit_per_minute");
+        let default_rate_limit_per_hour: i64 = collection.get("default_rate_limit_per_hour");
+        let created_at: String = collection.get("created_at");
+
+        html.push_str(&format!(
+            r##"
+                <tr>
+                    <td><strong>{}</strong></td>
+                    <td>{}</td>
+                    <td><span class="auth-type">{}</span></td>
+                    <td>{}/min, {}/hr</td>
+                    <td>{}</td>
+                    <td class="action-buttons">
+                        <button class="btn-secondary" hx-get="/web/collections/{}/routes" hx-target="#main-content">View Routes</button>
+                        <button class="btn-secondary" hx-get="/web/collections/edit/{}" hx-target="#modal-content" hx-trigger="click" onclick="openModal()">Edit</button>
+                        <button class="btn-secondary" hx-post="/web/collections/{}/apply-defaults" hx-target="#main-content">Apply Defaults</button>
+                        <button class="btn-danger" hx-delete="/web/collections/{}" hx-target="#main-content" hx-confirm="Are you sure you want to delete this collection?">Delete</button>
+                    </td>
+                </tr>
+            "##,
+            name, description, default_auth_type, default_rate_limit_per_minute, default_rate_limit_per_hour, created_at, id, id, id, id
+        ));
+    }
+
+    html.push_str("</tbody></table></div>");
+    Html(html)
+}
+
+pub async fn add_collection_form() -> Html<String> {
+    Html(r##"
+        <div class="modal-header">
+            <h3>Add New Collection</h3>
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <form hx-post="/web/collections/add" hx-target="#main-content" hx-on::after-request="closeModal()">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="name">Collection Name</label>
+                    <input type="text" id="name" name="name" placeholder="e.g., api_v1" required>
+                </div>
+                <div class="form-group">
+                    <label for="description">Description</label>
+                    <input type="text" id="description" name="description" placeholder="Brief description of this collection">
+                </div>
+                <div class="form-group">
+                    <label for="default_auth_type">Default Authentication Type</label>
+                    <select id="default_auth_type" name="default_auth_type">
+                        <option value="none">None</option>
+                        <option value="basic">Basic Auth</option>
+                        <option value="bearer">Bearer Token</option>
+                        <option value="api-key">API Key</option>
+                        <option value="oauth">OAuth 2.0</option>
+                        <option value="jwt">JWT</option>
+                        <option value="oidc">OIDC</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="default_auth_value">Default Auth Value</label>
+                    <input type="text" id="default_auth_value" name="default_auth_value" placeholder="Default auth value (optional)">
+                </div>
+                <div class="form-group">
+                    <label for="default_rate_limit_per_minute">Default Rate Limit (per minute)</label>
+                    <input type="number" id="default_rate_limit_per_minute" name="default_rate_limit_per_minute" value="60" min="1">
+                </div>
+                <div class="form-group">
+                    <label for="default_rate_limit_per_hour">Default Rate Limit (per hour)</label>
+                    <input type="number" id="default_rate_limit_per_hour" name="default_rate_limit_per_hour" value="1000" min="1">
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+                <button type="submit" class="btn-primary">Add Collection</button>
+            </div>
+        </form>
+    "##.to_string())
+}
+
+pub async fn add_collection_submit(State(state): State<AppState>, Form(form): Form<RouteCollectionFormData>) -> Result<Html<String>, StatusCode> {
+    let auth_type = AuthType::from_str(&form.default_auth_type);
+
+    let result = queries::insert_route_collection(
+        &state.db,
+        &form.name,
+        &form.description.unwrap_or_default(),
+        &auth_type,
+        &form.default_auth_value.unwrap_or_default(),
+        &form.default_oauth_token_url.unwrap_or_default(),
+        &form.default_oauth_client_id.unwrap_or_default(),
+        &form.default_oauth_client_secret.unwrap_or_default(),
+        &form.default_oauth_scope.unwrap_or_default(),
+        &form.default_jwt_secret.unwrap_or_default(),
+        &form.default_jwt_algorithm.unwrap_or_else(|| "HS256".to_string()),
+        &form.default_jwt_issuer.unwrap_or_default(),
+        &form.default_jwt_audience.unwrap_or_default(),
+        &form.default_jwt_required_claims.unwrap_or_default(),
+        &form.default_oidc_issuer.unwrap_or_default(),
+        &form.default_oidc_client_id.unwrap_or_default(),
+        &form.default_oidc_client_secret.unwrap_or_default(),
+        &form.default_oidc_audience.unwrap_or_default(),
+        &form.default_oidc_scope.unwrap_or_default(),
+        form.default_rate_limit_per_minute.unwrap_or(60),
+        form.default_rate_limit_per_hour.unwrap_or(1000),
+    ).await;
+
+    match result {
+        Ok(_) => {
+            info!("Collection '{}' added successfully", form.name);
+            Ok(collections_list(State(state)).await)
+        }
+        Err(e) => {
+            error!("Failed to add collection: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+// Stub implementations for remaining handlers
+pub async fn edit_collection_form(State(_state): State<AppState>, Path(_id): Path<i64>) -> Result<Html<String>, StatusCode> {
+    Ok(Html("<div>Edit Collection Form - To be implemented</div>".to_string()))
+}
+
+pub async fn edit_collection_submit(State(state): State<AppState>, Path(_id): Path<i64>, Form(_form): Form<RouteCollectionFormData>) -> Result<Html<String>, StatusCode> {
+    Ok(collections_list(State(state)).await)
+}
+
+pub async fn delete_collection(State(state): State<AppState>, Path(id): Path<i64>) -> Result<Html<String>, StatusCode> {
+    let result = queries::delete_route_collection(&state.db, id).await;
+
+    match result {
+        Ok(_) => {
+            info!("Collection deleted successfully");
+            Ok(collections_list(State(state)).await)
+        }
+        Err(e) => {
+            error!("Failed to delete collection: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn apply_collection_defaults(State(state): State<AppState>, Path(id): Path<i64>) -> Result<Html<String>, StatusCode> {
+    let result = queries::apply_collection_defaults_to_routes(&state.db, id).await;
+
+    match result {
+        Ok(_) => {
+            info!("Collection defaults applied successfully to routes");
+            Ok(collections_list(State(state)).await)
+        }
+        Err(e) => {
+            error!("Failed to apply collection defaults: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub async fn collection_routes_view(State(_state): State<AppState>, Path(_id): Path<i64>) -> Html<String> {
+    Html("<div>Collection Routes View - To be implemented</div>".to_string())
 }

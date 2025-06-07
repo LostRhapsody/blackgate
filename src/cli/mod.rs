@@ -103,6 +103,8 @@ enum Commands {
         upstream: String,
         #[arg(long, help = "Backup route path (optional)")]
         backup_route_path: Option<String>,
+        #[arg(long, help = "Collection ID for this route (optional)")]
+        collection_id: Option<i64>,
         #[arg(long)]
         auth_type: Option<String>,
         #[arg(long)]
@@ -189,6 +191,12 @@ enum Commands {
         #[arg(long, help = "Show only unhealthy routes")]
         unhealthy_only: bool,
     },
+    /// Collection management commands
+    #[command(name = "collection")]
+    Collection {
+        #[command(subcommand)]
+        action: CollectionAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -210,6 +218,70 @@ enum MigrateAction {
     ViewSchema,
 }
 
+#[derive(Subcommand)]
+enum CollectionAction {
+    /// List all collections
+    List,
+    /// Add a new collection
+    Add {
+        #[arg(long, help = "Collection name")]
+        name: String,
+        #[arg(long, help = "Collection description")]
+        description: Option<String>,
+        #[arg(long, help = "Default authentication type")]
+        default_auth_type: Option<String>,
+        #[arg(long, help = "Default auth value")]
+        default_auth_value: Option<String>,
+        #[arg(long, help = "Default OAuth token URL")]
+        default_oauth_token_url: Option<String>,
+        #[arg(long, help = "Default OAuth client ID")]
+        default_oauth_client_id: Option<String>,
+        #[arg(long, help = "Default OAuth client secret")]
+        default_oauth_client_secret: Option<String>,
+        #[arg(long, help = "Default OAuth scope")]
+        default_oauth_scope: Option<String>,
+        #[arg(long, help = "Default JWT secret")]
+        default_jwt_secret: Option<String>,
+        #[arg(long, help = "Default JWT algorithm")]
+        default_jwt_algorithm: Option<String>,
+        #[arg(long, help = "Default JWT issuer")]
+        default_jwt_issuer: Option<String>,
+        #[arg(long, help = "Default JWT audience")]
+        default_jwt_audience: Option<String>,
+        #[arg(long, help = "Default JWT required claims")]
+        default_jwt_required_claims: Option<String>,
+        #[arg(long, help = "Default OIDC issuer")]
+        default_oidc_issuer: Option<String>,
+        #[arg(long, help = "Default OIDC client ID")]
+        default_oidc_client_id: Option<String>,
+        #[arg(long, help = "Default OIDC client secret")]
+        default_oidc_client_secret: Option<String>,
+        #[arg(long, help = "Default OIDC audience")]
+        default_oidc_audience: Option<String>,
+        #[arg(long, help = "Default OIDC scope")]
+        default_oidc_scope: Option<String>,
+        #[arg(long, help = "Default rate limit per minute")]
+        default_rate_limit_per_minute: Option<u32>,
+        #[arg(long, help = "Default rate limit per hour")]
+        default_rate_limit_per_hour: Option<u32>,
+    },
+    /// Delete a collection
+    Delete {
+        #[arg(help = "Collection ID to delete")]
+        id: i64,
+    },
+    /// Show routes in a collection
+    Show {
+        #[arg(help = "Collection ID")]
+        id: i64,
+    },
+    /// Apply collection defaults to routes
+    ApplyDefaults {
+        #[arg(help = "Collection ID")]
+        id: i64,
+    },
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 //****                       Public Functions                            ****//
 ///////////////////////////////////////////////////////////////////////////////
@@ -223,6 +295,7 @@ pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
             path,
             upstream,
             backup_route_path,
+            collection_id,
             auth_type,
             auth_value,
             allowed_methods,
@@ -255,6 +328,7 @@ pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
                     &path,
                     &upstream,
                     &backup_route_path.unwrap_or_else(|| "".into()),
+                    collection_id,
                     &auth_type_enum,
                     &auth_value.unwrap_or_else(|| "".into()),
                     &allowed_methods.unwrap_or_else(|| "".into()),
@@ -536,6 +610,151 @@ pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
                     }
                 } else {
                     println!("No routes configured");
+                }
+            }
+        }
+        Commands::Collection { action } => {
+            match action {
+                CollectionAction::List => {
+                    let rows = queries::fetch_all_route_collections(*pool)
+                        .await
+                        .expect("Failed to fetch collections");
+
+                    if !rows.is_empty() {
+                        println!("\n{:<5} | {:<20} | {:<25} | {:<15} | {:<15} | {:<15}",
+                            "ID", "Name", "Description", "Auth Type", "Rate Limit/Min", "Rate Limit/Hour"
+                        );
+                        println!("{:-<120}", "");
+
+                        for row in rows {
+                            let id: i64 = row.get("id");
+                            let name: String = row.get("name");
+                            let description: String = row.get("description");
+                            let default_auth_type: String = row.get("default_auth_type");
+                            let default_rate_limit_per_minute: i64 = row.get("default_rate_limit_per_minute");
+                            let default_rate_limit_per_hour: i64 = row.get("default_rate_limit_per_hour");
+
+                            println!(
+                                "{:<5} | {:<20} | {:<25} | {:<15} | {:<15} | {:<15}",
+                                id, name, description, default_auth_type, default_rate_limit_per_minute, default_rate_limit_per_hour
+                            );
+                        }
+                    } else {
+                        println!("No collections found");
+                    }
+                }
+                CollectionAction::Add { 
+                    name, 
+                    description,
+                    default_auth_type,
+                    default_rate_limit_per_minute,
+                    default_rate_limit_per_hour,
+                    default_auth_value,
+                    default_oauth_token_url,
+                    default_oauth_client_id,
+                    default_oauth_client_secret,
+                    default_oauth_scope, 
+                    default_jwt_secret, 
+                    default_jwt_algorithm, 
+                    default_jwt_issuer, 
+                    default_jwt_audience, 
+                    default_jwt_required_claims,
+                    default_oidc_issuer, 
+                    default_oidc_client_id, 
+                    default_oidc_client_secret, 
+                    default_oidc_audience, 
+                    default_oidc_scope } 
+                => {
+
+                    // Parse the auth type and convert to enum
+                    let auth_type_enum = match default_auth_type.as_ref() {
+                        Some(auth_str) => AuthType::from_str(auth_str),
+                        None => AuthType::None,
+                    };
+
+                    // Insert the new collection into the database
+                    queries::insert_route_collection(
+                        *pool,
+                        &name,
+                        &description.unwrap_or_else(|| "".into()),
+                        &auth_type_enum,
+                        &default_auth_value.unwrap_or_else(|| "".into()),                        
+                        &default_oauth_token_url.unwrap_or_else(|| "".into()),
+                        &default_oauth_client_id.unwrap_or_else(|| "".into()),
+                        &default_oauth_client_secret.unwrap_or_else(|| "".into()),
+                        &default_oauth_scope.unwrap_or_else(|| "".into()),
+                        &default_jwt_secret.unwrap_or_else(|| "".into()),
+                        &default_jwt_algorithm.unwrap_or_else(|| "HS256".into()),
+                        &default_jwt_issuer.unwrap_or_else(|| "".into()),
+                        &default_jwt_audience.unwrap_or_else(|| "".into()),
+                        &default_jwt_required_claims.unwrap_or_else(|| "".into()),
+                        &default_oidc_issuer.unwrap_or_else(|| "".into()),
+                        &default_oidc_client_id.unwrap_or_else(|| "".into()),
+                        &default_oidc_client_secret.unwrap_or_else(|| "".into()),
+                        &default_oidc_audience.unwrap_or_else(|| "".into()),
+                        &default_oidc_scope.unwrap_or_else(|| "".into()),
+                        default_rate_limit_per_minute.unwrap_or(60),
+                        default_rate_limit_per_hour.unwrap_or(1000),
+                    )
+                    .await
+                    .expect("Failed to add collection");
+
+                    println!("Added new collection: {}", name);
+                }
+                CollectionAction::Delete { id } => {
+                    // Delete the collection by ID
+                    queries::delete_route_collection(*pool, id)
+                        .await
+                        .expect("Failed to delete collection");
+
+                    println!("Deleted collection with ID: {}", id);
+                }
+                CollectionAction::Show { id } => {
+                    // Fetch and display the routes in the specified collection
+                    let rows = queries::fetch_routes_in_collection(*pool, id)
+                        .await
+                        .expect("Failed to fetch routes for collection");
+
+                    if !rows.is_empty() {
+                        println!("\nRoutes in Collection ID {}:", id);
+                        println!(
+                            "{:<15} | {:<25} | {:<10} | {:<15} | {:<20} | {:<15} | {:<15} | {:<15} | {:<15} | {:<15}",
+                            "Path", "Upstream", "Auth Type", "Methods", "OAuth Client ID", "Rate/Min", "Rate/Hour", "Algorithm", "Issuer", "Required Claims"
+                        );
+                        println!("{:-<120}", "");
+
+                        for row in rows {
+                            let path = row.get::<String, _>("path");
+                            let upstream = row.get::<String, _>("upstream");
+                            let auth_type_str = row.get::<String, _>("auth_type");
+                            let auth_type = AuthType::from_str(&auth_type_str);
+                            let allowed_methods = row.get::<String, _>("allowed_methods");
+                            let oauth_client_id = row.get::<String, _>("oauth_client_id");
+                            let rate_limit_per_minute: i64 = row.get("rate_limit_per_minute");
+                            let rate_limit_per_hour: i64 = row.get("rate_limit_per_hour");
+                            let algorithm = row.get::<String, _>("jwt_algorithm");
+                            let issuer = row.get::<String, _>("jwt_issuer");
+                            let required_claims = row.get::<String, _>("jwt_required_claims");
+
+                            println!(
+                                "{:<15} | {:<25} | {:<10} | {:<15} | {:<20} | {:<15} | {:<15} | {:<15} | {:<15} | {:<15}",
+                                path, upstream, auth_type.to_display_string(), allowed_methods, oauth_client_id, rate_limit_per_minute, rate_limit_per_hour, algorithm, issuer, required_claims
+                            );
+                        }
+                    } else {
+                        println!("No routes found in this collection");
+                    }
+                }
+                CollectionAction::ApplyDefaults { id } => {
+                    // Apply the collection defaults to the specified routes
+                    queries::apply_collection_defaults_to_routes(
+                        *pool,
+                        id,
+                    )
+                    .await
+                    .expect("Failed to apply collection defaults");
+
+                    println!("Applied defaults from collection ID {} to routes", id);
                 }
             }
         }

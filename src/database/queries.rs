@@ -340,7 +340,7 @@ pub async fn clear_route_health_status(
 
     // Use INSERT OR REPLACE to handle both insert and update in one query
     sqlx::query(
-        "INSERT OR REPLACE INTO route_health_checks (path, status, checked_at, method_used)
+        "INSERT OR REPLACE INTO route_health_checks (path, health_check_status, checked_at, method_used)
         VALUES (?, ?, datetime('now'), ?)"
     )
     .bind(path)

@@ -72,7 +72,7 @@ impl DatabaseManager {
 
             info!("Initial migrations applied successfully.");
             info!("The Black Gate is ready to serve.");
-            return Ok(Self::new(db_manager.pool))
+            return Ok(db_manager)
         }
 
         let pool = SqlitePool::connect(database_url).await?;
@@ -379,7 +379,7 @@ mod tests {
         db.initialize().await.unwrap();
         let (applied, pending) = db.migration_status().await.unwrap();
         assert!(applied.is_empty());
-        assert_eq!(pending, vec![1, 2, 3]);
+        assert_eq!(pending, vec![1]); // Only one migration exists
     }
 
     #[tokio::test]
@@ -389,6 +389,6 @@ mod tests {
         db.apply_migration(1).await.unwrap();
         let (applied, pending) = db.migration_status().await.unwrap();
         assert_eq!(applied, vec![1]);
-        assert_eq!(pending, vec![2, 3]);
+        assert!(pending.is_empty()); // No pending migrations after applying the only one
     }
 }

@@ -192,22 +192,24 @@ impl HealthChecker {
 
         // First, try the dedicated health endpoint if available
         if let Some(health_endpoint) = &route.health_endpoint {
-            debug!("Checking health endpoint for route {}: {}", route.path, health_endpoint);
+            if !health_endpoint.is_empty() {
+                info!("Checking health endpoint for route {}: {}", route.path, health_endpoint);
 
-            match self.check_health_endpoint(health_endpoint).await {
-                Ok(health_check_status) => {
-                    let response_time = start_time.elapsed().as_millis() as u64;
-                    return Ok(HealthCheckResult {
-                        path: route.path.clone(),
-                        health_check_status,
-                        response_time_ms: Some(response_time),
-                        error_message: None,
-                        checked_at: Utc::now(),
-                        method_used: HealthCheckMethod::HealthEndpoint,
-                    });
-                }
-                Err(e) => {
-                    warn!("Health endpoint check failed for {}, falling back to HEAD request: {}", route.path, e);
+                match self.check_health_endpoint(health_endpoint).await {
+                    Ok(health_check_status) => {
+                        let response_time = start_time.elapsed().as_millis() as u64;
+                        return Ok(HealthCheckResult {
+                            path: route.path.clone(),
+                            health_check_status,
+                            response_time_ms: Some(response_time),
+                            error_message: None,
+                            checked_at: Utc::now(),
+                            method_used: HealthCheckMethod::HealthEndpoint,
+                        });
+                    }
+                    Err(e) => {
+                        warn!("Health endpoint check failed for {}, falling back to HEAD request: {}", route.path, e);
+                    }
                 }
             }
         }

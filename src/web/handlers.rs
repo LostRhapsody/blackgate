@@ -476,8 +476,8 @@ pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
                             <td>{}</td>
                             <td>
                                 <button hx-get="/web/routes/edit/{}" hx-target="#routes-content" hx-swap="innerHTML">Edit</button>
-                                <button hx-post="/web/routes/trigger-health/{}" hx-target="#content" hx-swap="innerHTML" hx-confirm="Trigger health check for this route?">Check Health</button>
-                                <button hx-post="/web/routes/clear-health/{}" hx-target="#content" hx-swap="innerHTML" hx-confirm="Clear health status for this route?">Clear Health</button>
+                                <button hx-post="/web/routes/trigger-health/{}" hx-target="#content" hx-swap="innerHTML" hx-confirm="Trigger health check for this route?">Check</button>
+                                <button hx-post="/web/routes/clear-health/{}" hx-target="#content" hx-swap="innerHTML" hx-confirm="Clear health status for this route?">Clear</button>
                                 <button hx-delete="/web/routes/{}" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Delete this route?">Delete</button>
                             </td>
                         </tr>

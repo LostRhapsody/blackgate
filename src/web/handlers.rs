@@ -832,8 +832,7 @@ pub async fn clear_route_health_status(State(state): State<AppState>, Path(path)
 
 pub async fn settings_view(State(state): State<AppState>) -> Html<String> {
     // Fetch all settings from database
-    let settings_rows = sqlx::query("SELECT key, value, description, created_at, updated_at FROM settings ORDER BY key")
-        .fetch_all(&state.db)
+    let settings_rows = queries::get_all_settings(&state.db)
         .await
         .unwrap_or_default();
 

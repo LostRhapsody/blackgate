@@ -175,9 +175,9 @@ impl DatabaseManager {
                         ('/api/test', 'https://httpbin.org/get', 'GET');
                     -- Default settings
                     INSERT INTO settings (key, value, description) VALUES
-                        ('default_rate_limit_per_minute', '60', 'Default rate limit per minute'),
-                        ('default_rate_limit_per_hour', '1000', 'Default rate limit per hour'),
-                        ('health_check_interval_seconds', '60', 'Health check interval in seconds');                        
+                        ('default_rate_limit_per_minute', '60', 'Default rate limit per minute, requries restart'),
+                        ('default_rate_limit_per_hour', '1000', 'Default rate limit per hour, requries restart'),
+                        ('health_check_interval_seconds', '60', 'Health check interval in seconds, requries restart');                        
                 "#.to_string(),
             },
         ]

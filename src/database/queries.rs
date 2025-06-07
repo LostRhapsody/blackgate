@@ -331,6 +331,10 @@ pub async fn store_request_metrics(
     .await
 }
 
+///////////////////////////////////////////////////////////////////////////////
+//****                      Health Check Queries                         ****//
+///////////////////////////////////////////////////////////////////////////////
+
 /// Clear health status for a route by setting it to "Unknown"
 pub async fn clear_route_health_status(
     pool: &SqlitePool,
@@ -348,4 +352,28 @@ pub async fn clear_route_health_status(
     .bind(HealthCheckMethod::Manual.to_string())
     .execute(pool)
     .await
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//****                        Settings Queries                           ****//
+///////////////////////////////////////////////////////////////////////////////
+
+pub fn get_setting_by_key(
+    pool: &SqlitePool,
+    key: &str,
+) -> Result<Option<sqlx::sqlite::SqliteRow>, sqlx::Error> {
+    tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(async {
+            sqlx::query("SELECT key, value, description, created_at, updated_at FROM settings WHERE key = ?")
+                .bind(key)
+                .fetch_optional(pool)
+                .await
+        })
+    })
+}
+
+pub async fn get_all_settings(pool: &SqlitePool) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
+    sqlx::query("SELECT key, value, description, created_at, updated_at FROM settings ORDER BY key")
+        .fetch_all(pool)
+        .await
 }

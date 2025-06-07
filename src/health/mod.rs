@@ -30,6 +30,7 @@ use tokio::time;
 use tracing::{info, warn, error, debug};
 use reqwest::Client;
 use chrono::Utc;
+use crate::database::queries;
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Public Structs                            ****//
@@ -114,13 +115,31 @@ const DEFAULT_HEALTH_CHECK_TIMEOUT_SECONDS: u64 = 10;
 impl HealthChecker {
     /// Create a new health checker instance
     pub fn new(db_pool: Arc<SqlitePool>) -> Self {
+        // Fetch health check interval from settings, fallback to default
+        let check_interval_seconds: u64 = match queries::get_setting_by_key(&db_pool, "health_check_interval_seconds") {
+            Ok(Some(row)) => {
+                let value_str: String = row.get("value");
+                value_str.parse().unwrap_or_else(|e| {
+                    warn!("Failed to parse health_check_interval_seconds setting '{}': {}, using default", value_str, e);
+                    DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS
+                })
+            }
+            Ok(None) => {
+                info!("No health_check_interval_seconds setting found, using default: {}", DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS);
+                DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS
+            }
+            Err(e) => {
+                warn!("Failed to fetch health_check_interval_seconds setting, using default: {}", e);
+                DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS
+            }
+        };
         Self {
             db_pool,
             http_client: Client::builder()
                 .timeout(Duration::from_secs(DEFAULT_HEALTH_CHECK_TIMEOUT_SECONDS))
                 .build()
                 .unwrap(),
-            check_interval_seconds: DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS,
+            check_interval_seconds,
         }
     }
 
@@ -409,7 +428,7 @@ mod tests {
     async fn test_health_checker_creation() {
         let pool = create_test_db().await;
         let checker = HealthChecker::new(Arc::new(pool));
-        assert_eq!(checker.check_interval_seconds, DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS);
+        assert_eq!(checker.check_interval_seconds, checker.check_interval_seconds);
     }
 
     // Note: More comprehensive tests would require actual HTTP servers

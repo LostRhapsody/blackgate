@@ -20,6 +20,11 @@ pub struct MetricsQuery {
 }
 
 #[derive(Deserialize, Default)]
+pub struct RouteFormQuery {
+    collection_id: Option<i64>,
+}
+
+#[derive(Deserialize, Default)]
 pub struct RouteFormData {
     path: String,
     upstream: String,
@@ -732,7 +737,7 @@ pub async fn auth_fields_form(Query(params): Query<std::collections::HashMap<Str
     Html(html)
 }
 
-pub async fn add_route_form(State(state): State<AppState>) -> Html<String> {
+pub async fn add_route_form(State(state): State<AppState>, Query(query): Query<RouteFormQuery>) -> Html<String> {
     // Fetch available collections
     let collections = queries::fetch_all_route_collections(&state.db)
         .await
@@ -784,6 +789,7 @@ pub async fn add_route_form(State(state): State<AppState>) -> Html<String> {
 
     let form_data = RouteFormData {
         auth_type: "none".to_string(),
+        collection_id: query.collection_id,
         rate_limit_per_minute: Some(default_rate_limit_per_minute),
         rate_limit_per_hour: Some(default_rate_limit_per_hour),
         ..Default::default()
@@ -1399,6 +1405,85 @@ pub async fn apply_collection_defaults(State(state): State<AppState>, Path(id): 
     }
 }
 
-pub async fn collection_routes_view(State(_state): State<AppState>, Path(_id): Path<i64>) -> Html<String> {
-    Html("<div>Collection Routes View - To be implemented</div>".to_string())
+pub async fn collection_routes_view(State(state): State<AppState>, Path(collection_id): Path<i64>) -> Html<String> {
+    // Fetch collection information
+    let collection = queries::fetch_route_collection_by_id(&state.db, collection_id)
+        .await
+        .unwrap_or(None);
+    
+    let collection_name = if let Some(ref collection_row) = collection {
+        let name: String = collection_row.get("name");
+        name
+    } else {
+        format!("Collection {}", collection_id)
+    };
+
+    // Fetch routes in this collection
+    let rows = queries::fetch_routes_in_collection(&state.db, collection_id)
+        .await
+        .unwrap_or_default();
+
+    let mut html = format!(r##"
+        <h2>Routes in Collection: {}</h2>
+        <div class="dashboard-container">
+            <button hx-get="/web/collections" hx-target="#content" hx-swap="innerHTML">← Back to Collections</button>
+            <button hx-get="/web/routes/add-form?collection_id={}" hx-target="#content" hx-swap="innerHTML">Add Route to Collection</button>
+            <div class="dashboard-section">
+                <h3>Routes in this Collection</h3>
+    "##, collection_name, collection_id);
+
+    if !rows.is_empty() {
+        html.push_str(r##"
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Path</th>
+                            <th>Upstream</th>
+                            <th>Auth</th>
+                            <th>Rate/Min</th>
+                            <th>Rate/Hour</th>
+                            <th>Health Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        "##);
+        for row in rows {
+            let path: String = row.get("path");
+            let upstream: String = row.get("upstream");
+            let auth_type_str: String = row.get("auth_type");
+            let auth_type = AuthType::from_str(&auth_type_str);
+            let rate_min: i64 = row.get("rate_limit_per_minute");
+            let rate_hour: i64 = row.get("rate_limit_per_hour");
+
+            // unwrap that health status            
+            let health_status: Option<String> = row.get("health_check_status");
+            let health_status = health_status.unwrap_or_else(|| HealthStatus::Unknown.to_string());
+            let health_indicator = generate_health_indicator(&health_status);
+
+            html.push_str(&format!(r##"
+                        <tr>
+                            <td>{} {}</td>
+                            <td>{}</td>
+                            <td>{}</td>
+                            <td>{}</td>
+                            <td>{}</td>
+                            <td>{}</td>
+                            <td>
+                                <button hx-get="/web/routes/edit/{}" hx-target="#content" hx-swap="innerHTML">Edit</button>
+                                <button hx-post="/web/routes/trigger-health/{}" hx-target="#content" hx-swap="innerHTML" hx-confirm="Trigger health check for this route?">Check</button>
+                                <button hx-post="/web/routes/clear-health/{}" hx-target="#content" hx-swap="innerHTML" hx-confirm="Clear health status for this route?">Clear</button>
+                                <button hx-delete="/web/routes/{}" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Delete this route?">Delete</button>
+                            </td>
+                        </tr>
+            "##, health_indicator, path, upstream, auth_type.to_display_string(), rate_min, rate_hour, health_status, path, path, path, path));
+        }
+
+        html.push_str("</tbody></table>");
+    } else {
+        html.push_str(&format!(r##"<p>No routes found in this collection. <a href="#" hx-get="/web/routes/add-form?collection_id={}" hx-target="#content" hx-swap="innerHTML">Add a route</a> to get started.</p>"##, collection_id));
+    }
+
+    html.push_str("</div></div>");
+    Html(html)
 }

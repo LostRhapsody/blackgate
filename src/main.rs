@@ -34,7 +34,7 @@ use auth::{
 };
 use rate_limiter::RateLimiter;
 use metrics::RequestMetrics;
-use database::initialize_database;
+use database::{initialize_database, BLACKGATE_DB_URL};
 
 /// Application state shared across routes, contains DB pool and token cache
 #[derive(Clone)]
@@ -56,7 +56,7 @@ async fn main() {
 
     info!("Starting Black Gate API Gateway");
 
-    let pool = initialize_database("sqlite://blackgate.db")
+    let pool = initialize_database(BLACKGATE_DB_URL)
         .await
         .expect("Failed to initialize database");
 

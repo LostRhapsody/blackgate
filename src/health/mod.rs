@@ -327,9 +327,10 @@ impl HealthChecker {
     /// TODO what does this mean with the health check status????
     async fn fetch_routes_for_health_check(&self) -> Result<Vec<RouteHealthInfo>, sqlx::Error> {
         let rows = sqlx::query(
-            "SELECT path, upstream, health_endpoint,
-             COALESCE(health_check_status, 'Available') as health_check_status
-             FROM routes"
+            "SELECT r.path, r.upstream, r.health_endpoint, 
+            rhc.health_check_status
+            FROM routes r
+            LEFT JOIN route_health_checks rhc ON r.path = rhc.path"
         )
         .fetch_all(self.db_pool.as_ref())
         .await?;
@@ -368,7 +369,8 @@ impl HealthChecker {
 
     /// Mark a route as health check unavailable
     async fn mark_route_health_unavailable(&self, path: &str) -> Result<(), sqlx::Error> {
-        sqlx::query("UPDATE routes SET health_check_status = 'Unavailable' WHERE path = ?")
+        sqlx::query("UPDATE route_health_checks SET health_check_status = ? WHERE path = ?")
+            .bind(HealthStatus::Unavailable.to_string())
             .bind(path)
             .execute(self.db_pool.as_ref())
             .await?;

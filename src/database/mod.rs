@@ -18,9 +18,11 @@
 
 pub mod queries;
 
-use sqlx::{sqlite::SqlitePool, Row};
+use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePool, Row, Sqlite};
 use std::collections::HashMap;
 use tracing::{error, info, warn};
+
+pub const BLACKGATE_DB_URL: &str = "sqlite://blackgate.db";
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Public Structs                            ****//
@@ -49,14 +51,28 @@ impl DatabaseManager {
     pub async fn connect_with_file_creation(database_url: &str) -> Result<Self, sqlx::Error> {
         info!("Opening the Black Gate to: {}", database_url);
 
-        if database_url.starts_with("sqlite://") {
-            let file_path = &database_url[9..];
-            if !std::path::Path::new(file_path).exists() {
-                info!("No database found at {}, forging a new one", file_path);
-                let temp_pool = SqlitePool::connect(database_url).await?;
-                sqlx::query("SELECT 1").execute(&temp_pool).await?;
-                temp_pool.close().await;
-            }
+        // if it does not exist, create and apply migrations then leave
+        if !Sqlite::database_exists(database_url).await.unwrap_or(false) {
+
+            // create
+            info!("Database does not exist at {}, creating it", database_url);
+            Sqlite::create_database(database_url).await?;
+
+            // check
+            let pool = SqlitePool::connect(database_url).await?;
+            sqlx::query("SELECT 1").execute(&pool).await?;
+            info!("Database created successfully at {}", database_url);
+            info!("Initializing migrations table...");
+
+            // apply migrations (initialize)
+            let db_manager = Self::new(pool);
+            db_manager.create_migrations_table().await?;
+            info!("Migrations table created successfully.");
+            db_manager.apply_pending_migrations().await?;
+
+            info!("Initial migrations applied successfully.");
+            info!("The Black Gate is ready to serve.");
+            return Ok(Self::new(db_manager.pool))
         }
 
         let pool = SqlitePool::connect(database_url).await?;
@@ -119,7 +135,8 @@ impl DatabaseManager {
                         oidc_audience TEXT,
                         oidc_scope TEXT,
                         rate_limit_per_minute INTEGER DEFAULT 60,
-                        rate_limit_per_hour INTEGER DEFAULT 1000
+                        rate_limit_per_hour INTEGER DEFAULT 1000,
+                        health_endpoint TEXT
                     );
                     CREATE TABLE IF NOT EXISTS request_metrics (
                         id TEXT PRIMARY KEY,
@@ -135,68 +152,17 @@ impl DatabaseManager {
                         auth_type TEXT NOT NULL,
                         client_ip TEXT,
                         user_agent TEXT,
-                        error_message TEXT
-                    );
-                "#.to_string(),
-            },
-            Migration {
-                version: 2,
-                name: "add_route_description_column".to_string(),
-                sql: "ALTER TABLE routes ADD COLUMN description TEXT DEFAULT '';".to_string(),
-            },
-            Migration {
-                version: 3,
-                name: "add_route_tags_column".to_string(),
-                sql: "ALTER TABLE routes ADD COLUMN tags TEXT DEFAULT '';".to_string(),
-            },
-            Migration {
-                version: 5,
-                name: "add_route_status".to_string(),
-                sql: "ALTER TABLE routes ADD COLUMN status TEXT DEFAULT '';".to_string(),
-            },
-            Migration {
-                version: 6,
-                name: "add_request_metrics_payload".to_string(),
-                sql: "ALTER TABLE request_metrics ADD COLUMN payload TEXT DEFAULT '';".to_string(),
-            },
-            Migration {
-                version: 7,
-                name: "add_health_fields_to_routes".to_string(),
-                sql: r#"
-                    ALTER TABLE routes ADD COLUMN health_endpoint TEXT;
-                    ALTER TABLE routes ADD COLUMN health_check_status TEXT DEFAULT 'Available';
-                "#.to_string(),
-            },
-            Migration {
-                version: 8,
-                name: "create_route_health_checks_table".to_string(),
-                sql: r#"
-                    CREATE TABLE IF NOT EXISTS route_health_checks (
-                        path TEXT NOT NULL,
-                        status TEXT NOT NULL,
-                        response_time_ms INTEGER,
                         error_message TEXT,
-                        checked_at TEXT NOT NULL,
-                        method_used TEXT NOT NULL,
-                        PRIMARY KEY (path, checked_at)
+                        payload TEXT
                     );
-                "#.to_string(),
-            },
-            Migration {
-                version: 9,
-                name: "make_path_primary_key_in_route_health_checks".to_string(),
-                sql: r#"
-                    CREATE TABLE IF NOT EXISTS route_health_checks_temp (
+                    CREATE TABLE IF NOT EXISTS route_health_checks (
                         path TEXT PRIMARY KEY,
-                        status TEXT NOT NULL,
+                        health_check_status TEXT NOT NULL DEFAULT 'Unknown',
                         response_time_ms INTEGER,
                         error_message TEXT,
                         checked_at TEXT NOT NULL,
                         method_used TEXT NOT NULL
                     );
-                    INSERT INTO route_health_checks_temp SELECT * FROM route_health_checks;
-                    DROP TABLE route_health_checks;
-                    ALTER TABLE route_health_checks_temp RENAME TO route_health_checks;
                 "#.to_string(),
             },
         ]

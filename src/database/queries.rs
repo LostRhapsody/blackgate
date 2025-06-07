@@ -12,7 +12,7 @@
 
 use sqlx::{sqlite::SqlitePool, Row};
 use tracing::info;
-use crate::auth::types::AuthType;
+use crate::{auth::types::AuthType, health::{HealthCheckMethod, HealthStatus}};
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Route Queries                             ****//
@@ -95,16 +95,14 @@ pub async fn fetch_all_routes_for_listing(
 }
 
 /// Fetch routes with basic fields for web UI
-/// TODO we're ditching the status column so FIX THIS
 pub async fn fetch_routes_basic_info(
     pool: &SqlitePool,
 ) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
     sqlx::query(
-        "SELECT r.path, r.upstream, r.auth_type, r.rate_limit_per_minute, r.rate_limit_per_hour, r.health_check_status,
-                COALESCE(h.status, 'Unknown') as health_status
+        "SELECT r.path, r.upstream, r.auth_type, r.rate_limit_per_minute, r.rate_limit_per_hour
          FROM routes r
          LEFT JOIN (
-             SELECT path, status,
+             SELECT path, health_check_status,
                     ROW_NUMBER() OVER (PARTITION BY path ORDER BY checked_at DESC) as rn
              FROM route_health_checks
          ) h ON r.path = h.path AND h.rn = 1"
@@ -334,63 +332,20 @@ pub async fn store_request_metrics(
 }
 
 /// Clear health status for a route by setting it to "Unknown"
-/// TODO Need a better solution as this is CHAOTIC
 pub async fn clear_route_health_status(
     pool: &SqlitePool,
     path: &str,
-) -> Result<(), sqlx::Error> {
-    // Start a transaction to update both tables atomically
-    let mut tx = pool.begin().await?;
-
+) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
     info!("Clearing health status for route: {}", path);
-    // Reset the health_check_status on the routes table to 'Available'
-    sqlx::query(
-        "UPDATE routes SET health_check_status = 'Unknown', status = 'Unknown'
-        WHERE path = ?"
-    )
-        .bind(path)
-        .execute(&mut *tx)
-        .await?;
 
-    // Fetch the updated route to verify the changes
+    // Use INSERT OR REPLACE to handle both insert and update in one query
     sqlx::query(
-        "SELECT path, health_check_status, status FROM routes WHERE path = ?"
+        "INSERT OR REPLACE INTO route_health_checks (path, status, checked_at, method_used)
+        VALUES (?, ?, datetime('now'), ?)"
     )
     .bind(path)
-    .fetch_optional(&mut *tx)
-    .await?;
-
-    // check if it exists
-    let route_health_checks = sqlx::query(
-        "SELECT path, status, status FROM route_health_checks WHERE path = ?"
-    )
-    .bind(path)
-    .fetch_optional(&mut *tx)
-    .await?;
-
-    if let Some(_row) = route_health_checks {
-        // update the existing health check record
-        sqlx::query(
-            "UPDATE route_health_checks SET status = 'Unknown', checked_at = datetime('now'), method_used = 'manual'
-            WHERE path = ?"
-        )
-        .bind(path)
-        .execute(&mut *tx)
-        .await?;
-    } else {
-        // Insert a new health check record with 'Unknown' status
-        sqlx::query(
-            "INSERT INTO route_health_checks (path, status, checked_at, method_used)
-            VALUES (?, 'Unknown', datetime('now'), 'manual')"
-        )
-        .bind(path)
-        .execute(&mut *tx)
-        .await?;
-    }
-
-    // Commit the transaction
-    tx.commit().await?;
-
-    // Return a dummy result since we can't return the transaction result
-    Ok(())
+    .bind(HealthStatus::Unknown.to_string())
+    .bind(HealthCheckMethod::Manual.to_string())
+    .execute(pool)
+    .await
 }

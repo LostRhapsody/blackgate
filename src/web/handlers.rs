@@ -519,18 +519,3 @@ pub async fn delete_collection(State(state): State<AppState>, Path(id): Path<i64
         }
     }
 }
-
-pub async fn apply_collection_defaults(State(state): State<AppState>, Path(id): Path<i64>) -> Result<Html<String>, StatusCode> {
-    let result = queries::apply_collection_defaults_to_routes(&state.db, id).await;
-
-    match result {
-        Ok(_) => {
-            info!("Collection defaults applied successfully to routes");
-            Ok(collections_list(State(state)).await)
-        }
-        Err(e) => {
-            error!("Failed to apply collection defaults: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
-}

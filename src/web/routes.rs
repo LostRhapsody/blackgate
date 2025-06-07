@@ -58,10 +58,6 @@ pub fn create_routes() -> Router<AppState> {
             post(handlers::edit_collection_submit),
         )
         .route("/web/collections/{id}", delete(handlers::delete_collection))
-        .route(
-            "/web/collections/{id}/apply-defaults",
-            post(handlers::apply_collection_defaults),
-        )
         .route("/web/collections/{id}/routes", get(collection_routes_view))
         // Settings routes
         .route("/web/settings", get(settings_view))

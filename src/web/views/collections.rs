@@ -62,14 +62,13 @@ pub async fn collections_list(State(state): State<AppState>) -> Html<String> {
                     <td>{}/min, {}/hr</td>
                     <td>{}</td>
                     <td class="action-buttons">
-                        <button hx-get="/web/collections/{}/routes" hx-target="#content" hx-swap="innerHTML">View Routes</button>
+                        <button hx-get="/web/collections/{}/routes" hx-target="#content" hx-swap="innerHTML">Routes</button>
                         <button hx-get="/web/collections/edit/{}" hx-target="#content" hx-swap="innerHTML">Edit</button>
-                        <button hx-post="/web/collections/{}/apply-defaults" hx-target="#content" hx-swap="innerHTML" hx-confirm="Apply collection defaults to all routes in this collection?">Apply Defaults</button>
                         <button hx-delete="/web/collections/{}" hx-target="#content" hx-swap="innerHTML" hx-confirm="Are you sure you want to delete this collection?">Delete</button>
                     </td>
                 </tr>
             "##,
-            name, description, default_auth_type, default_rate_limit_per_minute, default_rate_limit_per_hour, created_at, id, id, id, id
+            name, description, default_auth_type, default_rate_limit_per_minute, default_rate_limit_per_hour, created_at, id, id, id
         ));
     }
 

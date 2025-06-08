@@ -2,6 +2,7 @@ use openapiv3::OpenAPI;
 use serde_json::Value;
 use std::error::Error;
 use std::fmt;
+use tracing::{info, warn};
 
 /// Custom error type for OpenAPI parsing operations
 #[derive(Debug)]
@@ -29,6 +30,32 @@ pub struct OpenApiMetadata {
     pub title: String,
     pub description: Option<String>,
     pub auth_type: String, // Will be "none", "basic-auth", "api-key", "oauth2", "jwt", "oidc"
+}
+
+/// A route record that can be created from an OpenAPI path
+#[derive(Debug, Clone)]
+pub struct OpenApiRoute {
+    pub path: String,
+    pub upstream: String,
+    pub allowed_methods: String,
+    pub auth_type: String,
+    pub collection_id: Option<i64>,
+    pub rate_limit_per_minute: u32,
+    pub rate_limit_per_hour: u32,
+}
+
+impl Default for OpenApiRoute {
+    fn default() -> Self {
+        Self {
+            path: String::new(),
+            upstream: String::new(),
+            allowed_methods: String::new(),
+            auth_type: "none".to_string(),
+            collection_id: None,
+            rate_limit_per_minute: 60,
+            rate_limit_per_hour: 1000,
+        }
+    }
 }
 
 /// Fetches an OpenAPI specification from a URL and extracts metadata
@@ -232,6 +259,101 @@ fn validate_openapi_spec(spec: &OpenAPI) -> Result<(), OpenApiError> {
     }
     
     Ok(())
+}
+
+/// Extracts route records from an OpenAPI specification
+/// 
+/// # Arguments
+/// * `spec` - The parsed OpenAPI specification
+/// * `base_upstream_url` - The base URL where the API is hosted (e.g., "https://api.example.com")
+/// * `collection_id` - Optional collection ID to associate all routes with
+/// * `default_rate_limit_per_minute` - Default rate limit per minute for all routes
+/// * `default_rate_limit_per_hour` - Default rate limit per hour for all routes
+/// 
+/// # Returns
+/// * `Ok(Vec<OpenApiRoute>)` - Successfully extracted route records
+/// * `Err(OpenApiError)` - Error occurred during extraction
+pub fn extract_routes_from_spec(
+    spec: &OpenAPI,
+    base_upstream_url: &str,
+    collection_id: Option<i64>,
+    default_rate_limit_per_minute: u32,
+    default_rate_limit_per_hour: u32,
+) -> Result<Vec<OpenApiRoute>, OpenApiError> {
+    let mut routes = Vec::new();
+    
+    // Get the default authentication type from the spec
+    let default_auth_type = determine_auth_type(spec);
+    
+    // Parse each path in the OpenAPI spec
+    for (path, path_item) in &spec.paths.paths {
+        // Skip if this is a reference (we don't resolve references yet)
+        let path_item = match path_item {
+            openapiv3::ReferenceOr::Item(item) => item,
+            openapiv3::ReferenceOr::Reference { .. } => {
+                warn!("Skipping path '{}' because it's a reference (not yet supported)", path);
+                continue;
+            }
+        };
+        
+        // Collect all HTTP methods available for this path
+        let mut methods = Vec::new();
+        
+        if path_item.get.is_some() { methods.push("GET"); }
+        if path_item.post.is_some() { methods.push("POST"); }
+        if path_item.put.is_some() { methods.push("PUT"); }
+        if path_item.delete.is_some() { methods.push("DELETE"); }
+        if path_item.patch.is_some() { methods.push("PATCH"); }
+        if path_item.head.is_some() { methods.push("HEAD"); }
+        if path_item.options.is_some() { methods.push("OPTIONS"); }
+        if path_item.trace.is_some() { methods.push("TRACE"); }
+        
+        // Skip paths with no operations
+        if methods.is_empty() {
+            warn!("Skipping path '{}' because it has no operations defined", path);
+            continue;
+        }
+        
+        // Convert OpenAPI path to our route format
+        // OpenAPI uses {param} format, we might need to convert to a different format
+        let route_path = convert_openapi_path_to_route_path(path);
+        
+        // Build the upstream URL by combining base URL with the path
+        let upstream_url = format!("{}{}", base_upstream_url.trim_end_matches('/'), path);
+        
+        // Create a single route record for this path with all methods
+        let route = OpenApiRoute {
+            path: route_path,
+            upstream: upstream_url,
+            allowed_methods: methods.join(","),
+            auth_type: default_auth_type.clone(),
+            collection_id,
+            rate_limit_per_minute: default_rate_limit_per_minute,
+            rate_limit_per_hour: default_rate_limit_per_hour,
+        };
+        
+        routes.push(route);
+    }
+    
+    if routes.is_empty() {
+        return Err(OpenApiError::ValidationError(
+            "No valid paths found in OpenAPI specification".to_string()
+        ));
+    }
+    
+    info!("Extracted {} routes from OpenAPI specification", routes.len());
+    Ok(routes)
+}
+
+/// Converts an OpenAPI path format to our route path format
+/// 
+/// For now, this is a simple passthrough, but we could add logic here
+/// to convert OpenAPI path parameters to different formats if needed.
+fn convert_openapi_path_to_route_path(openapi_path: &str) -> String {
+    // OpenAPI uses {param} format
+    // For now, we'll keep it as-is since our gateway can handle this format
+    // In the future, we might want to convert to :param or other formats
+    openapi_path.to_string()
 }
 
 #[cfg(test)]
@@ -458,5 +580,268 @@ mod tests {
         
         assert_eq!(metadata.title, "Public API");
         assert_eq!(metadata.auth_type, "none");
+    }
+
+    #[test]
+    fn test_extract_routes_basic() {
+        let spec_json = r#"
+        {
+            "openapi": "3.0.0",
+            "info": {
+                "title": "Test API",
+                "version": "1.0.0"
+            },
+            "paths": {
+                "/test": {
+                    "get": {
+                        "summary": "Test endpoint",
+                        "responses": {
+                            "200": {
+                                "description": "Success"
+                            }
+                        }
+                    },
+                    "post": {
+                        "summary": "Create test",
+                        "responses": {
+                            "201": {
+                                "description": "Created"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        "#;
+
+        let spec = parse_openapi_spec(spec_json).unwrap();
+        let routes = extract_routes_from_spec(&spec, "https://api.example.com", None, 60, 1000).unwrap();
+        
+        assert_eq!(routes.len(), 1); // One route for the /test path
+        
+        let route = &routes[0];
+        assert_eq!(route.path, "/test");
+        assert_eq!(route.upstream, "https://api.example.com/test");
+        assert_eq!(route.allowed_methods, "GET,POST");
+        assert_eq!(route.auth_type, "none");
+        assert_eq!(route.collection_id, None);
+        assert_eq!(route.rate_limit_per_minute, 60);
+        assert_eq!(route.rate_limit_per_hour, 1000);
+    }
+
+    #[test]
+    fn test_extract_routes_with_collection_id() {
+        let spec_json = r#"
+        {
+            "openapi": "3.0.0",
+            "info": {
+                "title": "Test API",
+                "version": "1.0.0"
+            },
+            "paths": {
+                "/test": {
+                    "get": {
+                        "summary": "Test endpoint",
+                        "responses": {
+                            "200": {
+                                "description": "Success"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        "#;
+
+        let spec = parse_openapi_spec(spec_json).unwrap();
+        let routes = extract_routes_from_spec(&spec, "https://api.example.com", Some(123), 60, 1000).unwrap();
+        
+        assert_eq!(routes.len(), 1);
+        
+        let route = &routes[0];
+        assert_eq!(route.path, "/test");
+        assert_eq!(route.upstream, "https://api.example.com/test");
+        assert_eq!(route.allowed_methods, "GET");
+        assert_eq!(route.auth_type, "none");
+        assert_eq!(route.collection_id, Some(123));
+        assert_eq!(route.rate_limit_per_minute, 60);
+        assert_eq!(route.rate_limit_per_hour, 1000);
+    }
+
+    #[test]
+    fn test_extract_routes_no_paths() {
+        let spec_json = r#"
+        {
+            "openapi": "3.0.0",
+            "info": {
+                "title": "Empty API",
+                "version": "1.0.0"
+            },
+            "paths": {}
+        }
+        "#;
+
+        let spec = parse_openapi_spec(spec_json).unwrap();
+        let result = extract_routes_from_spec(&spec, "https://api.example.com", None, 60, 1000);
+        
+        assert!(result.is_err());
+        
+        if let Err(OpenApiError::ValidationError(msg)) = result {
+            assert!(msg.contains("No valid paths found"));
+        } else {
+            panic!("Expected ValidationError");
+        }
+    }
+
+    #[test]
+    fn test_extract_routes_multiple_paths() {
+        let spec_json = r#"
+        {
+            "openapi": "3.0.0",
+            "info": {
+                "title": "Multi Path API",
+                "version": "1.0.0"
+            },
+            "paths": {
+                "/users": {
+                    "get": {
+                        "summary": "List users",
+                        "responses": {
+                            "200": {
+                                "description": "Success"
+                            }
+                        }
+                    },
+                    "post": {
+                        "summary": "Create user",
+                        "responses": {
+                            "201": {
+                                "description": "Created"
+                            }
+                        }
+                    }
+                },
+                "/users/{id}": {
+                    "get": {
+                        "summary": "Get user",
+                        "responses": {
+                            "200": {
+                                "description": "Success"
+                            }
+                        }
+                    },
+                    "put": {
+                        "summary": "Update user",
+                        "responses": {
+                            "200": {
+                                "description": "Updated"
+                            }
+                        }
+                    },
+                    "delete": {
+                        "summary": "Delete user",
+                        "responses": {
+                            "204": {
+                                "description": "Deleted"
+                            }
+                        }
+                    }
+                },
+                "/health": {
+                    "get": {
+                        "summary": "Health check",
+                        "responses": {
+                            "200": {
+                                "description": "Healthy"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        "#;
+
+        let spec = parse_openapi_spec(spec_json).unwrap();
+        let routes = extract_routes_from_spec(&spec, "https://api.example.com", Some(42), 30, 500).unwrap();
+        
+        assert_eq!(routes.len(), 3); // Three paths
+        
+        // Check /users route
+        let users_route = routes.iter().find(|r| r.path == "/users").unwrap();
+        assert_eq!(users_route.upstream, "https://api.example.com/users");
+        assert_eq!(users_route.allowed_methods, "GET,POST");
+        assert_eq!(users_route.collection_id, Some(42));
+        assert_eq!(users_route.rate_limit_per_minute, 30);
+        assert_eq!(users_route.rate_limit_per_hour, 500);
+        
+        // Check /users/{id} route  
+        let user_id_route = routes.iter().find(|r| r.path == "/users/{id}").unwrap();
+        assert_eq!(user_id_route.upstream, "https://api.example.com/users/{id}");
+        assert_eq!(user_id_route.allowed_methods, "GET,PUT,DELETE");
+        
+        // Check /health route
+        let health_route = routes.iter().find(|r| r.path == "/health").unwrap();
+        assert_eq!(health_route.upstream, "https://api.example.com/health");
+        assert_eq!(health_route.allowed_methods, "GET");
+    }
+
+    #[test]
+    fn test_extract_routes_with_authentication() {
+        let spec_json = r#"
+        {
+            "openapi": "3.0.0",
+            "info": {
+                "title": "Secured API",
+                "version": "1.0.0"
+            },
+            "paths": {
+                "/secure": {
+                    "get": {
+                        "summary": "Secure endpoint",
+                        "responses": {
+                            "200": {
+                                "description": "Success"
+                            }
+                        }
+                    }
+                }
+            },
+            "components": {
+                "securitySchemes": {
+                    "bearerAuth": {
+                        "type": "http",
+                        "scheme": "bearer",
+                        "bearerFormat": "JWT"
+                    }
+                }
+            },
+            "security": [
+                {
+                    "bearerAuth": []
+                }
+            ]
+        }
+        "#;
+
+        let spec = parse_openapi_spec(spec_json).unwrap();
+        let routes = extract_routes_from_spec(&spec, "https://secure.example.com", None, 10, 100).unwrap();
+        
+        assert_eq!(routes.len(), 1);
+        
+        let route = &routes[0];
+        assert_eq!(route.path, "/secure");
+        assert_eq!(route.upstream, "https://secure.example.com/secure");
+        assert_eq!(route.allowed_methods, "GET");
+        assert_eq!(route.auth_type, "jwt"); // Bearer tokens are mapped to JWT
+        assert_eq!(route.rate_limit_per_minute, 10);
+        assert_eq!(route.rate_limit_per_hour, 100);
+    }
+
+    #[test]
+    fn test_convert_openapi_path_to_route_path() {
+        // Test that OpenAPI path parameters are preserved
+        assert_eq!(convert_openapi_path_to_route_path("/users/{id}"), "/users/{id}");
+        assert_eq!(convert_openapi_path_to_route_path("/api/v1/items/{itemId}/details"), "/api/v1/items/{itemId}/details");
+        assert_eq!(convert_openapi_path_to_route_path("/simple"), "/simple");
     }
 }

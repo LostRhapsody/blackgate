@@ -4,6 +4,8 @@ use std::error::Error;
 use std::fmt;
 use tracing::{info, warn};
 
+use crate::auth::types::AuthType;
+
 /// Custom error type for OpenAPI parsing operations
 #[derive(Debug)]
 pub enum OpenApiError {
@@ -326,7 +328,7 @@ pub fn extract_routes_from_spec(
             path: route_path,
             upstream: upstream_url,
             allowed_methods: methods.join(","),
-            auth_type: default_auth_type.clone(),
+            auth_type: AuthType::None.to_string().into(), // Route auth MUST be None to use the collection's auth
             collection_id,
             rate_limit_per_minute: default_rate_limit_per_minute,
             rate_limit_per_hour: default_rate_limit_per_hour,

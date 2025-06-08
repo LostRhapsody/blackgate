@@ -4,6 +4,15 @@ set -e
 
 echo "🔧 Setting up BlackGate routes..."
 
+# Initialize and clean database
+echo "🗄️  Initializing database..."
+mkdir -p /app/data
+rm -f /app/data/blackgate.db /app/data/blackgate.db-shm /app/data/blackgate.db-wal
+echo "   Database files cleaned"
+
+echo "   Applying database migrations..."
+blackgate migrate apply-all
+
 # Configure BlackGate routes using CLI
 echo "   Adding /fast route..."
 blackgate add-route \

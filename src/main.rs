@@ -29,6 +29,8 @@ mod open_api;
 mod tests;
 use sqlx::sqlite::SqlitePool;
 use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+use tokio::sync::RwLock;
 use tracing::info;
 use auth::{
     oauth::OAuthTokenCache,
@@ -37,6 +39,7 @@ use auth::{
 use rate_limiter::RateLimiter;
 use metrics::RequestMetrics;
 use database::{initialize_database, BLACKGATE_DB_URL};
+use routing::handlers::RouteConfig;
 
 /// Application state shared across routes, contains DB pool and token cache
 #[derive(Clone)]
@@ -44,6 +47,7 @@ struct AppState {
     db: SqlitePool,
     token_cache: Arc<Mutex<OAuthTokenCache>>,
     rate_limiter: Arc<Mutex<RateLimiter>>,
+    route_cache: Arc<RwLock<HashMap<String, RouteConfig>>>,
 }
 
 #[tokio::main]

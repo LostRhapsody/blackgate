@@ -7,7 +7,7 @@ services:
       - "3000:3000"
     environment:
       - RUST_LOG=blackgate=info,tower_http=debug
-      - DATABASE_URL=sqlite:///blackgate.db
+      - DATABASE_URL=sqlite:///app/data/blackgate.db
     deploy:
       resources:
         limits:
@@ -21,13 +21,13 @@ services:
     networks:
       - loadtest
     volumes:
-      - ./blackgate.db:/blackgate.db
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
+      - ./data:/app/data
+    # healthcheck:
+      # test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+      # interval: 10s
+      # timeout: 5s
+      # retries: 3
+      # start_period: 30s
 
   upstream:
     build: ./upstream-test-server
@@ -47,12 +47,12 @@ services:
           memory: 128M
     networks:
       - loadtest
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
+    # healthcheck:
+    #   test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 3
+    #   start_period: 15s
 
 networks:
   loadtest:

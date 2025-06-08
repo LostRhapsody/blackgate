@@ -34,6 +34,8 @@
 use sqlx::sqlite::SqlitePool;
 use tracing::{info, error};
 use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+use tokio::sync::RwLock;
 use crate::AppState;
 use crate::auth::oauth::OAuthTokenCache;
 use crate::rate_limiter::RateLimiter;
@@ -48,10 +50,13 @@ use crate::health::HealthChecker;
 pub async fn start_server(pool: SqlitePool) {
     let token_cache = Arc::new(Mutex::new(OAuthTokenCache::new()));
     let rate_limiter = Arc::new(Mutex::new(RateLimiter::new()));
+    let route_cache = Arc::new(RwLock::new(HashMap::new()));
+
     let app_state = AppState {
         db: pool.clone(),
         token_cache,
         rate_limiter,
+        route_cache,
     };
 
     let app = create_router(app_state);
@@ -73,10 +78,13 @@ pub async fn start_server_with_shutdown(
 ) {
     let token_cache = Arc::new(Mutex::new(OAuthTokenCache::new()));
     let rate_limiter = Arc::new(Mutex::new(RateLimiter::new()));
+    let route_cache = Arc::new(RwLock::new(HashMap::new()));
+    
     let app_state = AppState {
         db: pool.clone(),
         token_cache,
         rate_limiter,
+        route_cache,
     };
 
     let app = create_router(app_state);

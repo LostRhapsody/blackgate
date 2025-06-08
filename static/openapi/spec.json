@@ -5,7 +5,18 @@
         "version": "1.0.0",
         "description": "This API uses OAuth 2.0 for authentication and authorization."
     },
-    "paths": {},
+    "paths": {
+        "/test": {
+            "get": {
+                "summary": "Test endpoint",
+                "responses": {
+                    "200": {
+                        "description": "Success"
+                    }
+                }
+            }
+        }
+    },
     "components": {
         "securitySchemes": {
             "oauth2": {

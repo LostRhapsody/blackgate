@@ -356,6 +356,36 @@ fn convert_openapi_path_to_route_path(openapi_path: &str) -> String {
     openapi_path.to_string()
 }
 
+/// Fetches and parses an OpenAPI specification from a URL
+/// 
+/// # Arguments
+/// * `url` - The URL of the OpenAPI specification
+/// 
+/// # Returns
+/// * `Ok(OpenAPI)` - Successfully parsed OpenAPI specification
+/// * `Err(OpenApiError)` - Error occurred during fetch or parsing
+pub async fn fetch_and_parse_spec(url: &str) -> Result<OpenAPI, OpenApiError> {
+    // Fetch the document from the URL
+    let response = reqwest::get(url)
+        .await
+        .map_err(|e| OpenApiError::FetchError(format!("Failed to fetch from URL: {}", e)))?;
+    
+    if !response.status().is_success() {
+        return Err(OpenApiError::FetchError(format!(
+            "HTTP {} when fetching OpenAPI spec from {}", 
+            response.status(), 
+            url
+        )));
+    }
+    
+    let spec_text = response.text()
+        .await
+        .map_err(|e| OpenApiError::FetchError(format!("Failed to read response body: {}", e)))?;
+    
+    // Parse the specification
+    parse_openapi_spec(&spec_text)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

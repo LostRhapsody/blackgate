@@ -535,6 +535,65 @@ pub async fn insert_route_collection(
     .await
 }
 
+/// Insert a new route collection and return the collection ID
+pub async fn insert_route_collection_with_id(
+    pool: &SqlitePool,
+    name: &str,
+    description: &str,
+    default_auth_type: &AuthType,
+    default_auth_value: &str,
+    default_oauth_token_url: &str,
+    default_oauth_client_id: &str,
+    default_oauth_client_secret: &str,
+    default_oauth_scope: &str,
+    default_jwt_secret: &str,
+    default_jwt_algorithm: &str,
+    default_jwt_issuer: &str,
+    default_jwt_audience: &str,
+    default_jwt_required_claims: &str,
+    default_oidc_issuer: &str,
+    default_oidc_client_id: &str,
+    default_oidc_client_secret: &str,
+    default_oidc_audience: &str,
+    default_oidc_scope: &str,
+    default_rate_limit_per_minute: u32,
+    default_rate_limit_per_hour: u32,
+) -> Result<i64, sqlx::Error> {
+    let result = sqlx::query(
+        "INSERT INTO route_collections (
+            name, description, default_auth_type, default_auth_value,
+            default_oauth_token_url, default_oauth_client_id, default_oauth_client_secret, default_oauth_scope,
+            default_jwt_secret, default_jwt_algorithm, default_jwt_issuer, default_jwt_audience, default_jwt_required_claims,
+            default_oidc_issuer, default_oidc_client_id, default_oidc_client_secret, default_oidc_audience, default_oidc_scope,
+            default_rate_limit_per_minute, default_rate_limit_per_hour
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    .bind(name)
+    .bind(description)
+    .bind(default_auth_type.to_string())
+    .bind(default_auth_value)
+    .bind(default_oauth_token_url)
+    .bind(default_oauth_client_id)
+    .bind(default_oauth_client_secret)
+    .bind(default_oauth_scope)
+    .bind(default_jwt_secret)
+    .bind(default_jwt_algorithm)
+    .bind(default_jwt_issuer)
+    .bind(default_jwt_audience)
+    .bind(default_jwt_required_claims)
+    .bind(default_oidc_issuer)
+    .bind(default_oidc_client_id)
+    .bind(default_oidc_client_secret)
+    .bind(default_oidc_audience)
+    .bind(default_oidc_scope)
+    .bind(default_rate_limit_per_minute)
+    .bind(default_rate_limit_per_hour)
+    .execute(pool)
+    .await?;
+    
+    Ok(result.last_insert_rowid())
+}
+
 /// Update a route collection
 pub async fn update_route_collection(
     pool: &SqlitePool,
@@ -727,4 +786,48 @@ pub async fn apply_collection_defaults_to_routes(
     .bind(collection_id)
     .execute(pool)
     .await
+}
+
+/// Insert routes from OpenAPI spec data
+pub async fn insert_routes_from_openapi(
+    pool: &SqlitePool,
+    collection_id: i64,
+    routes: &[crate::open_api::OpenApiRoute],
+    default_upstream_prefix: &str,
+) -> Result<(), sqlx::Error> {
+    for route in routes {
+        // Convert auth_type string to AuthType enum
+        let auth_type = AuthType::from_str(&route.auth_type);
+        
+        // Use the existing insert_or_replace_route function
+        // For OpenAPI routes, we'll use defaults for many fields
+        insert_or_replace_route(
+            pool,
+            &route.path,
+            &format!("{}{}", default_upstream_prefix, route.path), // upstream
+            "", // backup_route_path
+            Some(collection_id),
+            &auth_type,
+            "", // auth_value - empty for now
+            &route.allowed_methods,
+            "", // oauth_token_url - empty for now
+            "", // oauth_client_id - empty for now
+            "", // oauth_client_secret - empty for now
+            "", // oauth_scope - empty for now
+            "", // jwt_secret - empty for now
+            "HS256", // jwt_algorithm - default
+            "", // jwt_issuer - empty for now
+            "", // jwt_audience - empty for now
+            "", // jwt_required_claims - empty for now
+            route.rate_limit_per_minute,
+            route.rate_limit_per_hour,
+            "", // oidc_issuer - empty for now
+            "", // oidc_client_id - empty for now
+            "", // oidc_client_secret - empty for now
+            "", // oidc_audience - empty for now
+            "", // oidc_scope - empty for now
+            "", // health_endpoint - empty for now
+        ).await?;
+    }
+    Ok(())
 }

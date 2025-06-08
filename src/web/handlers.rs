@@ -533,16 +533,27 @@ pub async fn delete_setting(State(state): State<AppState>, Path(key): Path<Strin
 
 pub async fn add_collection_submit(State(state): State<AppState>, Form(form): Form<RouteCollectionFormData>) -> Result<Html<String>, StatusCode> {
     // Check if OpenAPI spec URL is provided
-    let (name, description, auth_type) = if let Some(openapi_url) = &form.openapi_spec_url {
+    let (name, description, auth_type, openapi_spec) = if let Some(openapi_url) = &form.openapi_spec_url {
         if !openapi_url.trim().is_empty() {
             // Fetch and extract metadata from OpenAPI spec
             match crate::open_api::fetch_and_extract_metadata(openapi_url).await {
                 Ok(metadata) => {
                     info!("Successfully extracted metadata from OpenAPI spec: {}", metadata.title);
+                    
+                    // Also fetch the OpenAPI spec for route extraction
+                    let spec = match crate::open_api::fetch_and_parse_spec(openapi_url).await {
+                        Ok(spec) => Some(spec),
+                        Err(e) => {
+                            warn!("Could not re-parse OpenAPI spec for route extraction: {}", e);
+                            None
+                        }
+                    };
+                    
                     (
                         metadata.title,
                         metadata.description.unwrap_or_default(),
-                        AuthType::from_str(&metadata.auth_type)
+                        AuthType::from_str(&metadata.auth_type),
+                        spec
                     )
                 },
                 Err(e) => {
@@ -555,7 +566,8 @@ pub async fn add_collection_submit(State(state): State<AppState>, Form(form): Fo
             (
                 form.name.clone().unwrap_or_default(),
                 form.description.clone().unwrap_or_default(),
-                AuthType::from_str(&form.default_auth_type.clone().unwrap_or_else(|| "none".into()))
+                AuthType::from_str(&form.default_auth_type.clone().unwrap_or_else(|| "none".into())),
+                None
             )
         }
     } else {
@@ -563,11 +575,13 @@ pub async fn add_collection_submit(State(state): State<AppState>, Form(form): Fo
         (
             form.name.clone().unwrap_or_default(),
             form.description.clone().unwrap_or_default(),
-            AuthType::from_str(&form.default_auth_type.clone().unwrap_or_else(|| "none".into()))
+            AuthType::from_str(&form.default_auth_type.clone().unwrap_or_else(|| "none".into())),
+            None
         )
     };
 
-    let result = queries::insert_route_collection(
+    // Create the collection and get the ID
+    let collection_id = queries::insert_route_collection_with_id(
         &state.db,
         &name,
         &description,
@@ -591,9 +605,40 @@ pub async fn add_collection_submit(State(state): State<AppState>, Form(form): Fo
         form.default_rate_limit_per_hour.unwrap_or(1000),
     ).await;
 
-    match result {
-        Ok(_) => {
-            info!("Collection '{}' added successfully", name);
+    match collection_id {
+        Ok(id) => {
+            info!("Collection '{}' added successfully with ID: {}", name, id);
+            
+            // If we have an OpenAPI spec, extract and create routes
+            if let Some(spec) = openapi_spec {
+                match crate::open_api::extract_routes_from_spec(
+                    &spec, 
+                    "", // base_upstream_url - empty for now, could be made configurable
+                    Some(id), 
+                    form.default_rate_limit_per_minute.unwrap_or(60),
+                    form.default_rate_limit_per_hour.unwrap_or(1000)
+                ) {
+                    Ok(routes) => {
+                        info!("Extracted {} routes from OpenAPI spec", routes.len());
+                        
+                        // Insert routes with the collection ID
+                        match queries::insert_routes_from_openapi(&state.db, id, &routes, "").await {
+                            Ok(_) => {
+                                info!("Successfully created {} routes for collection '{}'", routes.len(), name);
+                            },
+                            Err(e) => {
+                                error!("Failed to create routes for collection '{}': {}", name, e);
+                                // Collection was created but routes failed - log but don't fail the request
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        error!("Failed to extract routes from OpenAPI spec: {}", e);
+                        // Collection was created but route extraction failed - log but don't fail the request
+                    }
+                }
+            }
+            
             Ok(collections_list(State(state)).await)
         }
         Err(e) => {

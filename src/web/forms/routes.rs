@@ -32,7 +32,7 @@ pub fn generate_route_form(
     let auth_type = AuthType::from_str(&form_data.auth_type);
 
     // Generate collection options HTML
-    let mut collection_options = String::from("<option value=\"\">No Collection</option>");
+    let mut collection_options = String::from("<option value=\"0\">No Collection</option>");
     for collection in collections {
         let id: i64 = collection.get("id");
         let name: String = collection.get("name");

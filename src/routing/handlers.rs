@@ -213,8 +213,8 @@ pub async fn handle_request_core(
         path = %path,
         request_size_bytes = request_size,
         "Incoming request"
-    );    // Query the database for the route
-    let row = queries::fetch_route_config_by_path(&state.db, &path)
+    );    // Query the database for the route with collection data
+    let row = queries::fetch_route_config_with_collection_by_path(&state.db, &path)
         .await
         .expect("Database query failed");
 
@@ -406,25 +406,85 @@ pub async fn handle_request_core(
 
             // Extract route configuration from the final selected route (primary or backup)
             let auth_type_str: String = final_route.get("auth_type");
+            let route_auth_type = AuthType::from_str(&auth_type_str);
+            
+            // Check if route uses collection authentication (route auth is None and has collection)
+            let collection_id: Option<i64> = final_route.get("collection_id");
+            let use_collection_auth = route_auth_type == AuthType::None && collection_id.is_some();
+            
+            // Determine which auth settings to use
+            let (final_auth_type, final_auth_value, final_oauth_token_url, final_oauth_client_id, 
+                 final_oauth_client_secret, final_oauth_scope, final_jwt_secret, final_jwt_algorithm,
+                 final_jwt_issuer, final_jwt_audience, final_jwt_required_claims, final_oidc_issuer,
+                 final_oidc_client_id, final_oidc_client_secret, final_oidc_audience, final_oidc_scope) = if use_collection_auth {
+                // Use collection defaults
+                info!(
+                    request_id = %metrics.id,
+                    path = %path,
+                    collection_id = collection_id.unwrap_or(0),
+                    "Using collection authentication for route"
+                );
+                
+                let collection_auth_type_str: String = final_route.get("default_auth_type");
+                (
+                    AuthType::from_str(&collection_auth_type_str),
+                    final_route.get("default_auth_value"),
+                    final_route.get("default_oauth_token_url"),
+                    final_route.get("default_oauth_client_id"),
+                    final_route.get("default_oauth_client_secret"),
+                    final_route.get("default_oauth_scope"),
+                    final_route.get("default_jwt_secret"),
+                    final_route.get("default_jwt_algorithm"),
+                    final_route.get("default_jwt_issuer"),
+                    final_route.get("default_jwt_audience"),
+                    final_route.get("default_jwt_required_claims"),
+                    final_route.get("default_oidc_issuer"),
+                    final_route.get("default_oidc_client_id"),
+                    final_route.get("default_oidc_client_secret"),
+                    final_route.get("default_oidc_audience"),
+                    final_route.get("default_oidc_scope"),
+                )
+            } else {
+                // Use route-specific auth
+                (
+                    route_auth_type,
+                    final_route.get("auth_value"),
+                    final_route.get("oauth_token_url"),
+                    final_route.get("oauth_client_id"),
+                    final_route.get("oauth_client_secret"),
+                    final_route.get("oauth_scope"),
+                    final_route.get("jwt_secret"),
+                    final_route.get("jwt_algorithm"),
+                    final_route.get("jwt_issuer"),
+                    final_route.get("jwt_audience"),
+                    final_route.get("jwt_required_claims"),
+                    final_route.get("oidc_issuer"),
+                    final_route.get("oidc_client_id"),
+                    final_route.get("oidc_client_secret"),
+                    final_route.get("oidc_audience"),
+                    final_route.get("oidc_scope"),
+                )
+            };
+            
             let route_config = RouteConfig {
                 upstream: final_route.get("upstream"),
-                auth_type: AuthType::from_str(&auth_type_str),
-                auth_value: final_route.get("auth_value"),
-                oauth_token_url: final_route.get("oauth_token_url"),
-                oauth_client_id: final_route.get("oauth_client_id"),
-                oauth_client_secret: final_route.get("oauth_client_secret"),
-                oauth_scope: final_route.get("oauth_scope"),
-                jwt_secret: final_route.get("jwt_secret"),
-                jwt_algorithm: final_route.get("jwt_algorithm"),
-                jwt_issuer: final_route.get("jwt_issuer"),
-                jwt_audience: final_route.get("jwt_audience"),
-                jwt_required_claims: final_route.get("jwt_required_claims"),
+                auth_type: final_auth_type,
+                auth_value: final_auth_value,
+                oauth_token_url: final_oauth_token_url,
+                oauth_client_id: final_oauth_client_id,
+                oauth_client_secret: final_oauth_client_secret,
+                oauth_scope: final_oauth_scope,
+                jwt_secret: final_jwt_secret,
+                jwt_algorithm: final_jwt_algorithm,
+                jwt_issuer: final_jwt_issuer,
+                jwt_audience: final_jwt_audience,
+                jwt_required_claims: final_jwt_required_claims,
                 // OIDC specific fields
-                oidc_issuer: final_route.get("oidc_issuer"),
-                oidc_client_id: final_route.get("oidc_client_id"),
-                oidc_client_secret: final_route.get("oidc_client_secret"),
-                oidc_audience: final_route.get("oidc_audience"),
-                oidc_scope: final_route.get("oidc_scope"),
+                oidc_issuer: final_oidc_issuer,
+                oidc_client_id: final_oidc_client_id,
+                oidc_client_secret: final_oidc_client_secret,
+                oidc_audience: final_oidc_audience,
+                oidc_scope: final_oidc_scope,
             };
 
             info!(

@@ -295,6 +295,59 @@ pub async fn fetch_route_config_by_path(
         .await
 }
 
+/// Fetch route configuration by path for request routing, including collection defaults
+pub async fn fetch_route_config_with_collection_by_path(
+    pool: &SqlitePool,
+    path: &str,
+) -> Result<Option<sqlx::sqlite::SqliteRow>, sqlx::Error> {
+    sqlx::query("
+        SELECT 
+            r.upstream, 
+            r.backup_route_path, 
+            r.auth_type, 
+            r.auth_value, 
+            r.allowed_methods, 
+            r.oauth_token_url, 
+            r.oauth_client_id, 
+            r.oauth_client_secret, 
+            r.oauth_scope, 
+            r.jwt_secret, 
+            r.jwt_algorithm, 
+            r.jwt_issuer, 
+            r.jwt_audience, 
+            r.jwt_required_claims, 
+            r.oidc_issuer, 
+            r.oidc_client_id, 
+            r.oidc_client_secret, 
+            r.oidc_audience, 
+            r.oidc_scope, 
+            r.rate_limit_per_minute, 
+            r.rate_limit_per_hour,
+            r.collection_id,
+            c.default_auth_type,
+            c.default_auth_value,
+            c.default_oauth_token_url,
+            c.default_oauth_client_id,
+            c.default_oauth_client_secret,
+            c.default_oauth_scope,
+            c.default_jwt_secret,
+            c.default_jwt_algorithm,
+            c.default_jwt_issuer,
+            c.default_jwt_audience,
+            c.default_jwt_required_claims,
+            c.default_oidc_issuer,
+            c.default_oidc_client_id,
+            c.default_oidc_client_secret,
+            c.default_oidc_audience,
+            c.default_oidc_scope
+        FROM routes r 
+        LEFT JOIN route_collections c ON r.collection_id = c.id 
+        WHERE r.path = ?")
+        .bind(path)
+        .fetch_optional(pool)
+        .await
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 //****                      Metrics Storage Queries                      ****//
 ///////////////////////////////////////////////////////////////////////////////

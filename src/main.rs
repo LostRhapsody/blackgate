@@ -9,6 +9,7 @@
 //! web
 //! oauth_test_server
 //! health
+//! open_api
 //! tests
 //! main.rs
 
@@ -22,6 +23,7 @@ mod routing;
 mod server;
 mod database;
 mod health;
+mod open_api;
 
 #[cfg(test)]
 mod tests;

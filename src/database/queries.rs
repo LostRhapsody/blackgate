@@ -467,6 +467,7 @@ pub async fn fetch_route_collection_by_id(
 }
 
 /// Fetch a single route collection by name
+#[allow(dead_code)]
 pub async fn fetch_route_collection_by_name(
     pool: &SqlitePool,
     name: &str,
@@ -606,6 +607,7 @@ pub async fn delete_route_collection(
 }
 
 /// Fetch routes grouped by collection
+#[allow(dead_code)]
 pub async fn fetch_routes_by_collection(
     pool: &SqlitePool,
 ) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
@@ -652,6 +654,7 @@ pub async fn fetch_routes_in_collection(
 }
 
 /// Assign a route to a collection
+#[allow(dead_code)]
 pub async fn assign_route_to_collection(
     pool: &SqlitePool,
     route_path: &str,
@@ -665,6 +668,7 @@ pub async fn assign_route_to_collection(
 }
 
 /// Remove a route from its collection
+#[allow(dead_code)]
 pub async fn remove_route_from_collection(
     pool: &SqlitePool,
     route_path: &str,

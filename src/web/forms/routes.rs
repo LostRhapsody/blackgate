@@ -75,7 +75,7 @@ pub fn generate_route_form(
 
                 <div>
                     <label for="auth_type">Authentication Type:</label><br>
-                    <select id="auth_type" name="auth_type" hx-trigger="change" hx-target="#auth-fields" hx-get="/web/routes/auth-fields?auth_type={}" hx-swap="innerHTML">
+                    <select id="auth_type" name="auth_type" hx-trigger="change" hx-target="#auth-fields" hx-get="/web/routes/auth-fields" hx-swap="innerHTML">
                         <option value="none"{}>None</option>
                         <option value="api-key"{}>API Key</option>
                         <option value="basic-auth"{}>Basic Auth</option>
@@ -115,8 +115,7 @@ pub fn generate_route_form(
         form_data.path,
         form_data.upstream,
         form_data.backup_route_path.as_deref().unwrap_or(""),
-        collection_options,
-        form_data.auth_type,
+        collection_options,        
         if auth_type == AuthType::None {
             " selected"
         } else {

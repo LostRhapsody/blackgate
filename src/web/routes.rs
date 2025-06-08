@@ -48,6 +48,7 @@ pub fn create_routes() -> Router<AppState> {
         // Collection routes
         .route("/web/collections", get(collections_list))
         .route("/web/collections/add-form", get(add_collection_form))
+        .route("/web/collections/auth-fields", get(handlers::collection_auth_fields_form))
         .route(
             "/web/collections/add",
             post(handlers::add_collection_submit),

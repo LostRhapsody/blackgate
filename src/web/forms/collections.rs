@@ -3,10 +3,14 @@
 use axum::{extract::{Path, State}, response::Html};
 use hyper::StatusCode;
 
-use crate::AppState;
+use crate::{AppState, AuthType, web::forms::auth::generate_collection_auth_fields, web::handlers::RouteCollectionFormData};
 
 pub async fn add_collection_form() -> Html<String> {
-    let html = r##"
+    let form_data = RouteCollectionFormData::default();
+    let auth_type = AuthType::from_str(&form_data.default_auth_type);
+    let auth_fields = generate_collection_auth_fields(auth_type.clone(), &form_data);
+    
+    let html = format!(r##"
         <h3>Add New Collection</h3>
         <form hx-post="/web/collections/add" hx-target="#content" hx-swap="innerHTML">
             <div>
@@ -21,14 +25,18 @@ pub async fn add_collection_form() -> Html<String> {
             
             <div>
                 <label for="default_auth_type">Default Authentication Type:</label><br>
-                <select id="default_auth_type" name="default_auth_type">
-                    <option value="none">None</option>
-                    <option value="basic-auth">Basic Auth</option>
-                    <option value="api-key">API Key</option>
-                    <option value="oauth2">OAuth 2.0</option>
-                    <option value="jwt">JWT</option>
-                    <option value="oidc">OIDC</option>
+                <select id="default_auth_type" name="default_auth_type" hx-trigger="change" hx-target="#auth-fields" hx-get="/web/collections/auth-fields" hx-swap="innerHTML">
+                    <option value="none"{}>None</option>
+                    <option value="basic-auth"{}>Basic Auth</option>
+                    <option value="api-key"{}>API Key</option>
+                    <option value="oauth2"{}>OAuth 2.0</option>
+                    <option value="jwt"{}>JWT</option>
+                    <option value="oidc"{}>OIDC</option>
                 </select>
+            </div>
+            
+            <div id="auth-fields">
+                {}
             </div>
             
             <div>
@@ -46,8 +54,40 @@ pub async fn add_collection_form() -> Html<String> {
                 <button type="button" hx-get="/web/collections" hx-target="#content" hx-swap="innerHTML">Cancel</button>
             </div>
         </form>
-    "##;
-    Html(html.to_string())
+    "##,
+        if auth_type == AuthType::None {
+            " selected"
+        } else {
+            ""
+        },
+        if auth_type == AuthType::BasicAuth {
+            " selected"
+        } else {
+            ""
+        },
+        if auth_type == AuthType::ApiKey {
+            " selected"
+        } else {
+            ""
+        },
+        if auth_type == AuthType::OAuth2 {
+            " selected"
+        } else {
+            ""
+        },
+        if auth_type == AuthType::Jwt {
+            " selected"
+        } else {
+            ""
+        },
+        if auth_type == AuthType::Oidc {
+            " selected"
+        } else {
+            ""
+        },
+        auth_fields
+    );
+    Html(html)
 }
 
 // Stub implementations for remaining handlers

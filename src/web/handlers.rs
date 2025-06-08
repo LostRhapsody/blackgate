@@ -68,26 +68,26 @@ pub struct RouteFormData {
 
 #[derive(Deserialize, Default)]
 pub struct RouteCollectionFormData {
-    name: String,
-    description: Option<String>,
-    default_auth_type: String,
-    default_auth_value: Option<String>,
-    default_oauth_token_url: Option<String>,
-    default_oauth_client_id: Option<String>,
-    default_oauth_client_secret: Option<String>,
-    default_oauth_scope: Option<String>,
-    default_jwt_secret: Option<String>,
-    default_jwt_algorithm: Option<String>,
-    default_jwt_issuer: Option<String>,
-    default_jwt_audience: Option<String>,
-    default_jwt_required_claims: Option<String>,
-    default_oidc_issuer: Option<String>,
-    default_oidc_client_id: Option<String>,
-    default_oidc_client_secret: Option<String>,
-    default_oidc_audience: Option<String>,
-    default_oidc_scope: Option<String>,
-    default_rate_limit_per_minute: Option<u32>,
-    default_rate_limit_per_hour: Option<u32>,
+    pub name: String,
+    pub description: Option<String>,
+    pub default_auth_type: String,
+    pub default_auth_value: Option<String>,
+    pub default_oauth_token_url: Option<String>,
+    pub default_oauth_client_id: Option<String>,
+    pub default_oauth_client_secret: Option<String>,
+    pub default_oauth_scope: Option<String>,
+    pub default_jwt_secret: Option<String>,
+    pub default_jwt_algorithm: Option<String>,
+    pub default_jwt_issuer: Option<String>,
+    pub default_jwt_audience: Option<String>,
+    pub default_jwt_required_claims: Option<String>,
+    pub default_oidc_issuer: Option<String>,
+    pub default_oidc_client_id: Option<String>,
+    pub default_oidc_client_secret: Option<String>,
+    pub default_oidc_audience: Option<String>,
+    pub default_oidc_scope: Option<String>,
+    pub default_rate_limit_per_minute: Option<u32>,
+    pub default_rate_limit_per_hour: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -127,6 +127,18 @@ pub async fn auth_fields_form(Query(params): Query<std::collections::HashMap<Str
     let auth_type = AuthType::from_str(auth_type_str);
     let form_data = RouteFormData::default();
     let html = generate_auth_fields(auth_type, &form_data);
+    Html(html)
+}
+
+pub async fn collection_auth_fields_form(Query(params): Query<std::collections::HashMap<String, String>>) -> Html<String> {
+    info!("Generating collection auth fields");
+    let default_auth_type = "none".to_string();
+    let auth_type_str = params.get("default_auth_type").unwrap_or(&default_auth_type);
+    info!("Auth type for collection auth fields: {}", auth_type_str);
+    let auth_type = AuthType::from_str(auth_type_str);
+    let form_data = RouteCollectionFormData::default();
+    let html = crate::web::forms::auth::generate_collection_auth_fields(auth_type, &form_data);
+    info!("Generated collection auth fields HTML: {}", html);
     Html(html)
 }
 

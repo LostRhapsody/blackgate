@@ -16,6 +16,7 @@ Current Progress: 45%
 - Add, remove, and list routes via the CLI
 - Add, remove, edit and list routes via the Web UI
 - Create collections of routes for sharing authentication and organization
+- Use OpenAPI 3.0 Documents to automatically create collections and add all of the paths from the document as routes.
 - oAuth test server for testing oAuth Client Credential flows
 - HTTP Method Validation per-path
 - Detailed metrics for each request via the CLI and Web UI
@@ -27,7 +28,15 @@ Current Progress: 45%
 - Customizable defaults for health check interval and rate limites
 - Dockerfile included for containerization to self-host
 
-## Current WIP Feature
+## Current WIP Features
+
+**OpenAPI v3.0 Support**
+By submitting an OpenAPI v3.0 URL when creating a collection, Black Gate automatically creates a collection and routes for all the paths in the collection. All that needs to be setup is the authentication in the collection, and all routes should be ready to go.
+
+Stil missing:
+- Extract auth info, like the token URL and scopes, from the spec and add it to the collection.
+- Conversion tool to convert 2.0 to 3.0 specs. I don't plan on creating a new pipeline for 2.0, as it's a lot of additional tools. `swagger2openapi` is a mature, well maintained tool that will be suitable for this.
+
 
 **API route collections**
 
@@ -46,8 +55,6 @@ We currently support health checks every 60 seconds, using either a dedicated he
 - Alerts via a webhook or other notification system (TBD)
 
 ## Upcoming features
-
-...
 
 **Tenant-based Authorization**
 
@@ -98,7 +105,6 @@ $ curl -X POST http://localhost:3000/warehouse -d '{"payload": "test"}' -H "Cont
 - Protocol translation - bridge the gap between HTTP, WebSocket, gRPC, etc, simplifying client-side logic
 - Data transloation - convert requests and responses to and from JSON and XML (and other common syntaxes for data representation)
 - Data transformation and orchestration - modify request/response data and manage complex workflows
-- OpenAPI Specification Support - Automatically add all the routes from an OpenAPI spec to your Gateway
 - Code Stub Generation - Generate code based on OpenAPI Specs or your Gateway's routes
 - OpenAPI Specification Generation - Generate barebones OpenAPI Sepcs based on your routes
 - Secure Credential Management - Currently, credentials are added per-route, but could be stored outside the route schema and managed independantly

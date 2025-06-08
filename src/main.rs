@@ -40,6 +40,7 @@ use rate_limiter::RateLimiter;
 use metrics::RequestMetrics;
 use database::{initialize_database, BLACKGATE_DB_URL};
 use routing::handlers::RouteConfig;
+use health::HealthChecker;
 
 /// Application state shared across routes, contains DB pool and token cache
 #[derive(Clone)]
@@ -49,6 +50,7 @@ struct AppState {
     rate_limiter: Arc<Mutex<RateLimiter>>,
     route_cache: Arc<RwLock<HashMap<String, RouteConfig>>>,
     http_client: reqwest::Client,
+    health_checker: Arc<HealthChecker>,
 }
 
 #[tokio::main]

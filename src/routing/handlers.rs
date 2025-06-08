@@ -63,11 +63,10 @@
 
 use axum::{extract::OriginalUri, http::{HeaderMap, Method}};
 use sqlx::Row;
-use std::sync::Arc;
 use tokio::time::Instant;
 use tracing::{info, warn, error};
 use crate::{
-    auth::{apply_authentication, types::AuthType}, database::queries, health::{HealthChecker, HealthStatus}, metrics::{store_metrics, store_metrics_async, RequestMetrics}, rate_limiter::check_rate_limit, AppState
+    auth::{apply_authentication, types::AuthType}, database::queries, health::HealthStatus, metrics::{store_metrics_async, RequestMetrics}, rate_limiter::check_rate_limit, AppState
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -286,139 +285,108 @@ pub async fn handle_request_core(
         }  
     }  
 
-    // Check route health status for the backup route fallback
-    let health_checker = HealthChecker::new(Arc::new(state.db.clone()));
+    // Check route health status for the backup route fallback using cache
     let current_route = route_config;
     
+    // Try to get health status from cache (fast, non-blocking)
+    let primary_health_status = state.health_checker.get_cached_health_status(&path).await
+        .unwrap_or(HealthStatus::Unknown); // Default to Unknown if not cached
+    
     // Try to get a healthy route (either the primary or backup)
-    let route_config = match health_checker.fetch_route_for_health_check(&path).await {
-        Ok(health_routes) => {
-            // If we have health check data, check the primary route first
-            if let Some(health_route) = health_routes.first() {
-                // Check the health status of the primary route
-                if health_route.health_check_status == HealthStatus::Unhealthy {
-                    // If primary route is unhealthy, check for backup route
-                    warn!(
-                        request_id = %metrics.id,
-                        path = %path,
-                        "Primary route is unhealthy, checking for backup route"
-                    );
+    let route_config = if primary_health_status == HealthStatus::Unhealthy {
+        // If primary route is unhealthy, check for backup route
+        warn!(
+            request_id = %metrics.id,
+            path = %path,
+            "Primary route is unhealthy, checking for backup route"
+        );
 
-                    // Check if this route has a backup_route_path configured
-                    let backup_route_path: String = current_route.backup_path.clone().unwrap_or_default();
-                    if !backup_route_path.is_empty() {
-                        // backup is configured, attempt to use it
+        // Check if this route has a backup_route_path configured
+        let backup_route_path: String = current_route.backup_path.clone().unwrap_or_default();
+        if !backup_route_path.is_empty() {
+            // backup is configured, attempt to use it
+            info!(
+                request_id = %metrics.id,
+                path = %path,
+                backup_path = %backup_route_path,
+                "Attempting to use backup route"
+            );
+
+            // Fetch the backup route configuration
+            match get_cached_route_config(&state, &backup_route_path).await {
+                Some(backup_route) => {
+                    // Check if backup route is healthy (from cache)
+                    let backup_health_status = state.health_checker.get_cached_health_status(&backup_route_path).await
+                        .unwrap_or(HealthStatus::Unknown); // Default to Unknown if not cached
+
+                    if backup_health_status == HealthStatus::Healthy {
+                        // backup is healthy, switch to it
                         info!(
                             request_id = %metrics.id,
                             path = %path,
                             backup_path = %backup_route_path,
-                            "Attempting to use backup route"
+                            "Backup route is healthy, switching to backup"
                         );
-
-                        // Fetch the backup route configuration
-                        match get_cached_route_config(&state, &backup_route_path).await {
-                            Some(backup_route) => {
-                                // Check if backup route is healthy
-                                match health_checker.fetch_route_for_health_check(&backup_route_path).await {
-                                    Ok(backup_health_routes) => {
-                                        // we have backup health data, check the backup route's health status
-                                        if let Some(backup_health_route) = backup_health_routes.first() {                                                    
-                                            if backup_health_route.health_check_status == HealthStatus::Healthy {
-                                                // backup is healthy, switch to it
-                                                info!(
-                                                    request_id = %metrics.id,
-                                                    path = %path,
-                                                    backup_path = %backup_route_path,
-                                                    "Backup route is healthy, switching to backup"
-                                                );
-                                                metrics.path = backup_route_path.clone();
-                                                backup_route
-                                            } else {
-                                                // backup is unhealthy, log it and use the primary route
-                                                warn!(
-                                                    request_id = %metrics.id,
-                                                    path = %path,
-                                                    backup_path = %backup_route_path,
-                                                    "Backup route is also unhealthy, using primary anyway"
-                                                );
-                                                current_route
-                                            }
-                                        } else {
-                                            // if we have no health data for the backup route, log it and use the backup anyway
-                                            info!(
-                                                request_id = %metrics.id,
-                                                path = %path,
-                                                backup_path = %backup_route_path,
-                                                "No health data for backup route, using backup anyway"
-                                            );
-                                            metrics.path = backup_route_path.clone();
-                                            backup_route
-                                        }
-                                    }
-                                    Err(e) => {
-                                        // if backup route's health check fails we'll log it but still use the backup route
-                                        warn!(
-                                            request_id = %metrics.id,
-                                            path = %path,
-                                            backup_path = %backup_route_path,
-                                            error = %e,
-                                            "Failed to check backup route health, using backup anyway"
-                                        );
-                                        metrics.path = backup_route_path.clone();
-                                        backup_route
-                                    }
-                                }
-                            }
-                            None => {
-                                // if backup route is not found in the database, log it and use the primary route
-                                error!(
-                                    request_id = %metrics.id,
-                                    path = %path,
-                                    backup_path = %backup_route_path,
-                                    "Backup route not found in database, using unhealthy primary"
-                                );
-                                current_route
-                            }
-                        }
-                    } else {
-                        // tried to use a backup route but none is configured
+                        metrics.path = backup_route_path.clone();
+                        backup_route
+                    } else if backup_health_status == HealthStatus::Unhealthy {
+                        // backup is unhealthy, log it and use the primary route
                         warn!(
                             request_id = %metrics.id,
                             path = %path,
-                            "No backup route configured, using unhealthy primary"
+                            backup_path = %backup_route_path,
+                            "Backup route is also unhealthy, using primary anyway"
                         );
                         current_route
+                    } else {
+                        // backup health status is unknown, use backup anyway (fallback)
+                        info!(
+                            request_id = %metrics.id,
+                            path = %path,
+                            backup_path = %backup_route_path,
+                            "Backup route health status unknown, using backup anyway"
+                        );
+                        metrics.path = backup_route_path.clone();
+                        backup_route
                     }
-                } else {
-                    // if not unhealthy, use the primary route
-                    info!(
+                }
+                None => {
+                    // if backup route is not found in the database, log it and use the primary route
+                    error!(
                         request_id = %metrics.id,
                         path = %path,
-                        health_status = %health_route.health_check_status.to_string(),
-                        "Primary route health check passed"
+                        backup_path = %backup_route_path,
+                        "Backup route not found in database, using unhealthy primary"
                     );
                     current_route
                 }
-            } else {
-                // if no health check data is found, use the primary route
-                info!(
-                    request_id = %metrics.id,
-                    path = %path,
-                    "No health check data found for route, using primary"
-                );
-                current_route
             }
-        }
-        Err(e) => {
-            // if health check fails, log the error and use the primary route
+        } else {
+            // tried to use a backup route but none is configured
             warn!(
                 request_id = %metrics.id,
                 path = %path,
-                error = %e,
-                "Failed to fetch route health status, using primary anyway"
+                "No backup route configured, using unhealthy primary"
             );
             current_route
         }
+    } else {
+        // Primary route is healthy, unknown, or unavailable - use it
+        if primary_health_status != HealthStatus::Unknown {
+            info!(
+                request_id = %metrics.id,
+                path = %path,
+                health_status = %primary_health_status.to_string(),
+                "Primary route health check passed (from cache)"
+            );
+        } else {
+            info!(
+                request_id = %metrics.id,
+                path = %path,
+                "No cached health status for primary route, using primary anyway"
+            );
+        }
+        current_route
     };
 
     // Determine final authentication configuration

@@ -31,6 +31,24 @@ use tracing::{info, warn, error, debug};
 use reqwest::Client;
 use chrono::Utc;
 use crate::database::queries;
+use std::collections::HashMap;
+use tokio::sync::RwLock;
+///////////////////////////////////////////////////////////////////////////////
+//****                      Health Status Cache                          ****//
+///////////////////////////////////////////////////////////////////////////////
+
+/// Cached health status entry with timestamp
+#[derive(Debug, Clone)]
+pub struct CachedHealthStatus {
+    pub status: HealthStatus,
+    pub timestamp: i64, // Unix timestamp when cached (chrono::Utc::now().timestamp())
+}
+
+/// Shared health status cache
+pub type HealthStatusCache = Arc<RwLock<HashMap<String, CachedHealthStatus>>>;
+
+/// Cache TTL in seconds (health status considered stale after this time)
+const HEALTH_CACHE_TTL_SECONDS: i64 = 90; // Slightly longer than check interval
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Public Structs                            ****//
@@ -97,10 +115,12 @@ pub struct HealthCheckResult {
 }
 
 /// Health check manager that coordinates all health checking activities
+#[derive(Clone)]
 pub struct HealthChecker {
     db_pool: Arc<SqlitePool>,
     http_client: Client,
     check_interval_seconds: u64,
+    health_cache: HealthStatusCache,
 }
 
 /// Route information needed for health checking
@@ -149,6 +169,7 @@ impl HealthChecker {
                 .build()
                 .unwrap(),
             check_interval_seconds,
+            health_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -176,6 +197,9 @@ impl HealthChecker {
 
     /// Run health checks for all routes
     pub async fn run_health_checks(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // Clean up stale cache entries before running health checks
+        self.cleanup_stale_cache_entries().await;
+
         // Fetch all routes that need health checking
         let routes = self.fetch_routes_for_health_check().await?;
 
@@ -192,7 +216,7 @@ impl HealthChecker {
 
             match result {
                 Ok(health_result) => {
-                    // Store the health check result in database
+                    // Store the health check result in database and update cache
                     if let Err(e) = self.store_health_result(&health_result).await {
                         error!("Failed to store health result for route {}: {}", health_result.path, e);
                     }
@@ -333,6 +357,83 @@ impl HealthChecker {
             Ok(HealthStatus::Unhealthy)
         }
     }
+
+    /// Get health status from cache (non-blocking, fast)
+    /// Returns None if not cached or cache is stale, falls back to database
+    pub async fn get_cached_health_status(&self, path: &str) -> Option<HealthStatus> {
+        // First, try to get from cache
+        {
+            let cache = self.health_cache.read().await;
+            
+            if let Some(cached) = cache.get(path) {
+                let current_time = Utc::now().timestamp();
+                if current_time - cached.timestamp <= HEALTH_CACHE_TTL_SECONDS {
+                    debug!("Cache hit for route '{}': {:?}", path, cached.status);
+                    return Some(cached.status.clone());
+                } else {
+                    debug!("Cache entry for route '{}' is stale (age: {}s)", path, current_time - cached.timestamp);
+                }
+            } else {
+                debug!("No cache entry found for route '{}'", path);
+            }
+        } // Release read lock
+        
+        // Cache miss or stale - fetch from database and update cache
+        debug!("Fetching health status from database for route '{}'", path);
+        match self.fetch_route_for_health_check(path).await {
+            Ok(health_routes) => {
+                if let Some(health_route) = health_routes.first() {
+                    let status = health_route.health_check_status.clone();
+                    
+                    // Update cache with fresh data from database
+                    self.update_cached_health_status(path, status.clone()).await;
+                    
+                    debug!("Database lookup successful for route '{}': {:?}", path, status);
+                    Some(status)
+                } else {
+                    debug!("No health data found in database for route '{}'", path);
+                    None
+                }
+            }
+            Err(e) => {
+                warn!("Failed to fetch health status from database for route '{}': {}", path, e);
+                None
+            }
+        }
+    }
+
+    /// Update health status in cache
+    pub async fn update_cached_health_status(&self, path: &str, status: HealthStatus) {
+        let mut cache = self.health_cache.write().await;
+        let timestamp = Utc::now().timestamp();
+        
+        cache.insert(path.to_string(), CachedHealthStatus {
+            status: status.clone(),
+            timestamp,
+        });
+        
+        debug!("Updated cache for route '{}': {:?}", path, status);
+    }
+
+    /// Clear stale entries from cache (housekeeping)
+    pub async fn cleanup_stale_cache_entries(&self) {
+        let mut cache = self.health_cache.write().await;
+        let current_time = Utc::now().timestamp();
+        
+        let initial_size = cache.len();
+        cache.retain(|path, cached| {
+            let is_fresh = current_time - cached.timestamp <= HEALTH_CACHE_TTL_SECONDS;
+            if !is_fresh {
+                debug!("Removing stale cache entry for route '{}' (age: {}s)", path, current_time - cached.timestamp);
+            }
+            is_fresh
+        });
+        
+        let final_size = cache.len();
+        if final_size < initial_size {
+            debug!("Cleaned up {} stale cache entries ({} -> {})", initial_size - final_size, initial_size, final_size);
+        }
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -389,8 +490,9 @@ impl HealthChecker {
         Ok(routes)
     }
 
-    /// Store health check result in the database
+    /// Store health check result in the database and update cache
     pub async fn store_health_result(&self, result: &HealthCheckResult) -> Result<(), sqlx::Error> {
+        // Store in database
         sqlx::query(
             "INSERT OR REPLACE INTO route_health_checks
              (path, health_check_status, response_time_ms, error_message, checked_at, method_used)
@@ -405,6 +507,9 @@ impl HealthChecker {
         .execute(self.db_pool.as_ref())
         .await?;
 
+        // Update cache
+        self.update_cached_health_status(&result.path, result.health_check_status.clone()).await;
+
         Ok(())
     }
 
@@ -415,6 +520,9 @@ impl HealthChecker {
             .bind(path)
             .execute(self.db_pool.as_ref())
             .await?;
+
+        // Update cache
+        self.update_cached_health_status(path, HealthStatus::Unavailable).await;
 
         Ok(())
     }

@@ -52,6 +52,9 @@ pub async fn start_server(pool: SqlitePool) {
     let rate_limiter = Arc::new(Mutex::new(RateLimiter::new()));
     let route_cache = Arc::new(RwLock::new(HashMap::new()));
     let http_client = reqwest::Client::new();
+    
+    // Create shared health checker
+    let health_checker = Arc::new(HealthChecker::new(Arc::new(pool.clone())));
 
     let app_state = AppState {
         db: pool.clone(),
@@ -59,12 +62,14 @@ pub async fn start_server(pool: SqlitePool) {
         rate_limiter,
         route_cache,
         http_client,
+        health_checker: health_checker.clone(),
     };
 
     let app = create_router(app_state);
 
-    // initialize the health check service
-    HealthChecker::new(Arc::new(pool.clone())).start_background_checks();
+    // Create a new health checker for the background service Start the health check background service
+    let background_health_checker = HealthChecker::new(Arc::new(pool.clone()));
+    background_health_checker.start_background_checks();
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -83,18 +88,23 @@ pub async fn start_server_with_shutdown(
     let route_cache = Arc::new(RwLock::new(HashMap::new()));
     let http_client = reqwest::Client::new();
     
+    // Create shared health checker
+    let health_checker = Arc::new(HealthChecker::new(Arc::new(pool.clone())));
+    
     let app_state = AppState {
         db: pool.clone(),
         token_cache,
         rate_limiter,
         route_cache,
         http_client,
+        health_checker: health_checker.clone(),
     };
 
     let app = create_router(app_state);
 
-    // initialize the health check service
-    HealthChecker::new(Arc::new(pool.clone())).start_background_checks();
+    // Create a new health checker for the background service Start the health check background service
+    let background_health_checker = HealthChecker::new(Arc::new(pool.clone()));
+    background_health_checker.start_background_checks();
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     let addr = listener.local_addr().unwrap();

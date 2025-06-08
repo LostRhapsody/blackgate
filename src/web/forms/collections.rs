@@ -8,36 +8,45 @@ use crate::{AppState, AuthType, web::forms::auth::generate_collection_auth_field
 
 pub async fn add_collection_form() -> Html<String> {
     let form_data = RouteCollectionFormData::default();
-    let auth_type = AuthType::from_str(&form_data.default_auth_type);
+    let auth_type = AuthType::from_str(&form_data.default_auth_type.clone().unwrap_or_else(|| "none".into()));
     let auth_fields = generate_collection_auth_fields(auth_type.clone(), &form_data);
     
     let html = format!(r##"
         <h3>Add New Collection</h3>
         <form hx-post="/web/collections/add" hx-target="#content" hx-swap="innerHTML">
             <div>
-                <label for="name">Collection Name:</label><br>
-                <input type="text" id="name" name="name" placeholder="e.g., api_v1" required>
+                <label for="openapi_spec_url">OpenAPI v3.0 Specification URL (Optional):</label><br>
+                <input type="url" id="openapi_spec_url" name="openapi_spec_url" placeholder="https://example.com/api/openapi.json" 
+                       hx-trigger="input delay:500ms" hx-target="#form-fields" hx-get="/web/collections/toggle-fields" hx-swap="outerHTML">
+                <small>Generate a route collection using an OpenAPI v3.0 Document</small>
             </div>
-            
-            <div>
-                <label for="description">Description:</label><br>
-                <input type="text" id="description" name="description" placeholder="Brief description of this collection">
-            </div>
-            
-            <div>
-                <label for="default_auth_type">Default Authentication Type:</label><br>
-                <select id="default_auth_type" name="default_auth_type" hx-trigger="change" hx-target="#auth-fields" hx-get="/web/collections/auth-fields" hx-swap="innerHTML">
-                    <option value="none"{}>None</option>
-                    <option value="basic-auth"{}>Basic Auth</option>
-                    <option value="api-key"{}>API Key</option>
-                    <option value="oauth2"{}>OAuth 2.0</option>
-                    <option value="jwt"{}>JWT</option>
-                    <option value="oidc"{}>OIDC</option>
-                </select>
-            </div>
-            
-            <div id="auth-fields">
-                {}
+
+            <div id="form-fields">
+                <div>
+                    <label for="name">Collection Name:</label><br>
+                    <input type="text" id="name" name="name" placeholder="e.g., api_v1" required>
+                </div>
+                
+                <div>
+                    <label for="description">Description:</label><br>
+                    <input type="text" id="description" name="description" placeholder="Brief description of this collection">
+                </div>
+                
+                <div>
+                    <label for="default_auth_type">Default Authentication Type:</label><br>
+                    <select id="default_auth_type" name="default_auth_type" hx-trigger="change" hx-target="#auth-fields" hx-get="/web/collections/auth-fields" hx-swap="innerHTML">
+                        <option value="none"{}>None</option>
+                        <option value="basic-auth"{}>Basic Auth</option>
+                        <option value="api-key"{}>API Key</option>
+                        <option value="oauth2"{}>OAuth 2.0</option>
+                        <option value="jwt"{}>JWT</option>
+                        <option value="oidc"{}>OIDC</option>
+                    </select>
+                </div>
+                
+                <div id="auth-fields">
+                    {}
+                </div>
             </div>
             
             <div>
@@ -106,6 +115,7 @@ pub async fn edit_collection_form(State(state): State<AppState>, Path(id): Path<
     let form_data = RouteCollectionFormData {
         name: row.get("name"),
         description: Some(row.get("description")),
+        openapi_spec_url: None, // Edit form doesn't use OpenAPI URL
         default_auth_type: row.get("default_auth_type"),
         default_auth_value: Some(row.get("default_auth_value")),
         default_oauth_token_url: Some(row.get("default_oauth_token_url")),
@@ -126,7 +136,7 @@ pub async fn edit_collection_form(State(state): State<AppState>, Path(id): Path<
         default_rate_limit_per_hour: Some(row.get::<i64, _>("default_rate_limit_per_hour") as u32),
     };
 
-    let auth_type = AuthType::from_str(&form_data.default_auth_type);
+    let auth_type = AuthType::from_str(&form_data.default_auth_type.clone().unwrap_or_else(|| "none".into()));
     let auth_fields = generate_collection_auth_fields(auth_type.clone(), &form_data);
     
     let html = format!(r##"
@@ -175,7 +185,7 @@ pub async fn edit_collection_form(State(state): State<AppState>, Path(id): Path<
         </form>
     "##,
         id,
-        form_data.name,
+        form_data.name.unwrap_or_default(),
         form_data.description.unwrap_or_default(),
         if auth_type == AuthType::None { " selected" } else { "" },
         if auth_type == AuthType::BasicAuth { " selected" } else { "" },

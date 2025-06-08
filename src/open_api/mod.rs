@@ -8,6 +8,7 @@ use std::fmt;
 pub enum OpenApiError {
     ParseError(String),
     ValidationError(String),
+    FetchError(String),
 }
 
 impl fmt::Display for OpenApiError {
@@ -15,11 +16,139 @@ impl fmt::Display for OpenApiError {
         match self {
             OpenApiError::ParseError(msg) => write!(f, "OpenAPI Parse Error: {}", msg),
             OpenApiError::ValidationError(msg) => write!(f, "OpenAPI Validation Error: {}", msg),
+            OpenApiError::FetchError(msg) => write!(f, "OpenAPI Fetch Error: {}", msg),
         }
     }
 }
 
 impl Error for OpenApiError {}
+
+/// Metadata extracted from an OpenAPI specification
+#[derive(Debug, Clone)]
+pub struct OpenApiMetadata {
+    pub title: String,
+    pub description: Option<String>,
+    pub auth_type: String, // Will be "none", "basic-auth", "api-key", "oauth2", "jwt", "oidc"
+}
+
+/// Fetches an OpenAPI specification from a URL and extracts metadata
+/// 
+/// # Arguments
+/// * `url` - The URL to fetch the OpenAPI specification from
+/// 
+/// # Returns
+/// * `Ok(OpenApiMetadata)` - Successfully fetched and parsed metadata
+/// * `Err(OpenApiError)` - Error occurred during fetching or parsing
+pub async fn fetch_and_extract_metadata(url: &str) -> Result<OpenApiMetadata, OpenApiError> {
+    // Fetch the document from the URL
+    let response = reqwest::get(url)
+        .await
+        .map_err(|e| OpenApiError::FetchError(format!("Failed to fetch from URL: {}", e)))?;
+    
+    if !response.status().is_success() {
+        return Err(OpenApiError::FetchError(format!(
+            "HTTP {} when fetching OpenAPI spec from {}", 
+            response.status(), 
+            url
+        )));
+    }
+    
+    let spec_text = response.text()
+        .await
+        .map_err(|e| OpenApiError::FetchError(format!("Failed to read response body: {}", e)))?;
+    
+    // Parse the specification
+    let openapi_spec = parse_openapi_spec(&spec_text)?;
+    
+    // Extract metadata
+    extract_metadata(&openapi_spec)
+}
+
+/// Extracts metadata from a parsed OpenAPI specification
+/// 
+/// # Arguments
+/// * `spec` - The parsed OpenAPI specification
+/// 
+/// # Returns
+/// * `Ok(OpenApiMetadata)` - Successfully extracted metadata
+/// * `Err(OpenApiError)` - Error occurred during extraction
+pub fn extract_metadata(spec: &OpenAPI) -> Result<OpenApiMetadata, OpenApiError> {
+    let title = spec.info.title.clone();
+    let description = spec.info.description.clone();
+    
+    // Determine authentication type by analyzing security schemes
+    let auth_type = determine_auth_type(spec);
+    
+    Ok(OpenApiMetadata {
+        title,
+        description,
+        auth_type,
+    })
+}
+
+/// Determines the primary authentication type from an OpenAPI specification
+/// 
+/// This function analyzes the security schemes and global security requirements
+/// to determine the most appropriate authentication type for the API gateway.
+fn determine_auth_type(spec: &OpenAPI) -> String {
+    // Check if there are any security schemes defined
+    let security_schemes = match &spec.components {
+        Some(components) => &components.security_schemes,
+        None => return "none".to_string(),
+    };
+    
+    if security_schemes.is_empty() {
+        return "none".to_string();
+    }
+    
+    // Check global security requirements first
+    if let Some(security_reqs) = spec.security.as_ref() {
+        if !security_reqs.is_empty() {
+            for security_req in security_reqs {
+                for (scheme_name, _scopes) in security_req {
+                    if let Some(scheme_ref) = security_schemes.get(scheme_name) {
+                        if let Some(auth_type) = map_security_scheme_to_auth_type(scheme_ref) {
+                            return auth_type;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // If no global security, check the first available security scheme
+    for (_name, scheme_ref) in security_schemes {
+        if let Some(auth_type) = map_security_scheme_to_auth_type(scheme_ref) {
+            return auth_type;
+        }
+    }
+    
+    "none".to_string()
+}
+
+/// Maps an OpenAPI security scheme to our internal authentication type
+fn map_security_scheme_to_auth_type(scheme_ref: &openapiv3::ReferenceOr<openapiv3::SecurityScheme>) -> Option<String> {
+    match scheme_ref {
+        openapiv3::ReferenceOr::Item(scheme) => {
+            match scheme {
+                openapiv3::SecurityScheme::APIKey { .. } => Some("api-key".to_string()),
+                openapiv3::SecurityScheme::HTTP { scheme: http_scheme, .. } => {
+                    match http_scheme.to_lowercase().as_str() {
+                        "basic" => Some("basic-auth".to_string()),
+                        "bearer" => Some("jwt".to_string()), // Assume bearer tokens are JWT
+                        _ => Some("none".to_string()),
+                    }
+                },
+                openapiv3::SecurityScheme::OAuth2 { .. } => Some("oauth2".to_string()),
+                openapiv3::SecurityScheme::OpenIDConnect { .. } => Some("oidc".to_string()),
+            }
+        },
+        openapiv3::ReferenceOr::Reference { .. } => {
+            // For now, we don't resolve references, just default to none
+            Some("none".to_string())
+        }
+    }
+}
 
 /// Parses an OpenAPI specification document from a JSON string
 /// 
@@ -236,5 +365,98 @@ mod tests {
         } else {
             panic!("Expected ValidationError");
         }
+    }
+
+    #[test]
+    fn test_extract_metadata_basic() {
+        let spec_json = r#"
+        {
+            "openapi": "3.0.0",
+            "info": {
+                "title": "Test API",
+                "version": "1.0.0",
+                "description": "A test API for testing"
+            },
+            "paths": {},
+            "components": {
+                "securitySchemes": {
+                    "basicAuth": {
+                        "type": "http",
+                        "scheme": "basic"
+                    }
+                }
+            },
+            "security": [
+                {
+                    "basicAuth": []
+                }
+            ]
+        }
+        "#;
+
+        let spec = parse_openapi_spec(spec_json).unwrap();
+        let metadata = extract_metadata(&spec).unwrap();
+        
+        assert_eq!(metadata.title, "Test API");
+        assert_eq!(metadata.description, Some("A test API for testing".to_string()));
+        assert_eq!(metadata.auth_type, "basic-auth");
+    }
+
+    #[test]
+    fn test_extract_metadata_oauth2() {
+        let spec_json = r#"
+        {
+            "openapi": "3.0.0",
+            "info": {
+                "title": "OAuth API",
+                "version": "1.0.0"
+            },
+            "paths": {},
+            "components": {
+                "securitySchemes": {
+                    "oauth2": {
+                        "type": "oauth2",
+                        "flows": {
+                            "clientCredentials": {
+                                "tokenUrl": "https://example.com/token",
+                                "scopes": {}
+                            }
+                        }
+                    }
+                }
+            },
+            "security": [
+                {
+                    "oauth2": []
+                }
+            ]
+        }
+        "#;
+
+        let spec = parse_openapi_spec(spec_json).unwrap();
+        let metadata = extract_metadata(&spec).unwrap();
+        
+        assert_eq!(metadata.title, "OAuth API");
+        assert_eq!(metadata.auth_type, "oauth2");
+    }
+
+    #[test]
+    fn test_extract_metadata_no_auth() {
+        let spec_json = r#"
+        {
+            "openapi": "3.0.0",
+            "info": {
+                "title": "Public API",
+                "version": "1.0.0"
+            },
+            "paths": {}
+        }
+        "#;
+
+        let spec = parse_openapi_spec(spec_json).unwrap();
+        let metadata = extract_metadata(&spec).unwrap();
+        
+        assert_eq!(metadata.title, "Public API");
+        assert_eq!(metadata.auth_type, "none");
     }
 }

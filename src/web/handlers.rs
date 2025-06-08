@@ -68,9 +68,10 @@ pub struct RouteFormData {
 
 #[derive(Deserialize, Default)]
 pub struct RouteCollectionFormData {
-    pub name: String,
+    pub name: Option<String>,
     pub description: Option<String>,
-    pub default_auth_type: String,
+    pub openapi_spec_url: Option<String>,
+    pub default_auth_type: Option<String>,
     pub default_auth_value: Option<String>,
     pub default_oauth_token_url: Option<String>,
     pub default_oauth_client_id: Option<String>,
@@ -136,6 +137,64 @@ pub async fn collection_auth_fields_form(Query(params): Query<std::collections::
     let auth_type = AuthType::from_str(auth_type_str);
     let form_data = RouteCollectionFormData::default();
     let html = crate::web::forms::auth::generate_collection_auth_fields(auth_type, &form_data);
+    Html(html)
+}
+
+pub async fn toggle_collection_fields(Query(params): Query<std::collections::HashMap<String, String>>) -> Html<String> {
+    let empty_string = String::new();
+    let openapi_url = params.get("openapi_spec_url").unwrap_or(&empty_string);
+    let is_openapi_mode = !openapi_url.trim().is_empty();
+    
+    let form_data = RouteCollectionFormData::default();
+    let auth_type = AuthType::from_str(&form_data.default_auth_type.clone().unwrap_or_else(|| "none".into()));
+    let auth_fields = crate::web::forms::auth::generate_collection_auth_fields(auth_type.clone(), &form_data);
+    
+    let disabled = if is_openapi_mode { " disabled" } else { "" };
+    // TODO the fields are disabled, but don't look it. Add some styles to avoid confusion.
+    let disabled_note = if is_openapi_mode { "<small><em>These fields will be automatically filled from the OpenAPI specification</em></small>" } else { "" };
+    
+    let html = format!(r##"
+        <div id="form-fields">
+            {}
+            <div>
+                <label for="name">Collection Name:</label><br>
+                <input type="text" id="name" name="name" placeholder="e.g., api_v1" required{}>
+            </div>
+            
+            <div>
+                <label for="description">Description:</label><br>
+                <input type="text" id="description" name="description" placeholder="Brief description of this collection"{}>
+            </div>
+            
+            <div>
+                <label for="default_auth_type">Default Authentication Type:</label><br>
+                <select id="default_auth_type" name="default_auth_type" hx-trigger="change" hx-target="#auth-fields" hx-get="/web/collections/auth-fields" hx-swap="innerHTML"{}>
+                    <option value="none"{}>None</option>
+                    <option value="basic-auth"{}>Basic Auth</option>
+                    <option value="api-key"{}>API Key</option>
+                    <option value="oauth2"{}>OAuth 2.0</option>
+                    <option value="jwt"{}>JWT</option>
+                    <option value="oidc"{}>OIDC</option>
+                </select>
+            </div>
+            
+            <div id="auth-fields">
+                {}
+            </div>
+        </div>
+    "##,
+        disabled_note,
+        disabled,
+        disabled,
+        disabled,
+        if auth_type == AuthType::None { " selected" } else { "" },
+        if auth_type == AuthType::BasicAuth { " selected" } else { "" },
+        if auth_type == AuthType::ApiKey { " selected" } else { "" },
+        if auth_type == AuthType::OAuth2 { " selected" } else { "" },
+        if auth_type == AuthType::Jwt { " selected" } else { "" },
+        if auth_type == AuthType::Oidc { " selected" } else { "" },
+        auth_fields
+    );
     Html(html)
 }
 
@@ -473,12 +532,45 @@ pub async fn delete_setting(State(state): State<AppState>, Path(key): Path<Strin
 ///////////////////////////////////////////////////////////////////////////////
 
 pub async fn add_collection_submit(State(state): State<AppState>, Form(form): Form<RouteCollectionFormData>) -> Result<Html<String>, StatusCode> {
-    let auth_type = AuthType::from_str(&form.default_auth_type);
+    // Check if OpenAPI spec URL is provided
+    let (name, description, auth_type) = if let Some(openapi_url) = &form.openapi_spec_url {
+        if !openapi_url.trim().is_empty() {
+            // Fetch and extract metadata from OpenAPI spec
+            match crate::open_api::fetch_and_extract_metadata(openapi_url).await {
+                Ok(metadata) => {
+                    info!("Successfully extracted metadata from OpenAPI spec: {}", metadata.title);
+                    (
+                        metadata.title,
+                        metadata.description.unwrap_or_default(),
+                        AuthType::from_str(&metadata.auth_type)
+                    )
+                },
+                Err(e) => {
+                    error!("Failed to fetch or parse OpenAPI spec from {}: {}", openapi_url, e);
+                    return Err(StatusCode::BAD_REQUEST);
+                }
+            }
+        } else {
+            // Use form data
+            (
+                form.name.clone().unwrap_or_default(),
+                form.description.clone().unwrap_or_default(),
+                AuthType::from_str(&form.default_auth_type.clone().unwrap_or_else(|| "none".into()))
+            )
+        }
+    } else {
+        // Use form data
+        (
+            form.name.clone().unwrap_or_default(),
+            form.description.clone().unwrap_or_default(),
+            AuthType::from_str(&form.default_auth_type.clone().unwrap_or_else(|| "none".into()))
+        )
+    };
 
     let result = queries::insert_route_collection(
         &state.db,
-        &form.name,
-        &form.description.unwrap_or_default(),
+        &name,
+        &description,
         &auth_type,
         &form.default_auth_value.unwrap_or_default(),
         &form.default_oauth_token_url.unwrap_or_default(),
@@ -501,7 +593,7 @@ pub async fn add_collection_submit(State(state): State<AppState>, Form(form): Fo
 
     match result {
         Ok(_) => {
-            info!("Collection '{}' added successfully", form.name);
+            info!("Collection '{}' added successfully", name);
             Ok(collections_list(State(state)).await)
         }
         Err(e) => {
@@ -512,12 +604,12 @@ pub async fn add_collection_submit(State(state): State<AppState>, Form(form): Fo
 }
 
 pub async fn edit_collection_submit(State(state): State<AppState>, Path(id): Path<i64>, Form(form): Form<RouteCollectionFormData>) -> Result<Html<String>, StatusCode> {
-    let auth_type = AuthType::from_str(&form.default_auth_type);
+    let auth_type = AuthType::from_str(&form.default_auth_type.clone().unwrap_or_else(|| "none".into()));
 
     let result = queries::update_route_collection(
         &state.db,
         id,
-        &form.name,
+        &form.name.clone().unwrap_or_default(),
         &form.description.unwrap_or_default(),
         &auth_type,
         &form.default_auth_value.unwrap_or_default(),

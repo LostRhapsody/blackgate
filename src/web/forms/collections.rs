@@ -33,6 +33,12 @@ pub async fn add_collection_form() -> Html<String> {
                 </div>
                 
                 <div>
+                    <label for="base_upstream_url">Base Upstream URL:</label><br>
+                    <input type="url" id="base_upstream_url" name="base_upstream_url" placeholder="https://api.example.com" required>
+                    <small>Base URL that will be prepended to all route paths</small>
+                </div>
+                
+                <div>
                     <label for="default_auth_type">Default Authentication Type:</label><br>
                     <select id="default_auth_type" name="default_auth_type" hx-trigger="change" hx-target="#auth-fields" hx-get="/web/collections/auth-fields" hx-swap="innerHTML">
                         <option value="none"{}>None</option>
@@ -116,6 +122,7 @@ pub async fn edit_collection_form(State(state): State<AppState>, Path(id): Path<
         name: row.get("name"),
         description: Some(row.get("description")),
         openapi_spec_url: None, // Edit form doesn't use OpenAPI URL
+        base_upstream_url: None, // Edit form doesn't show base URL for now
         default_auth_type: row.get("default_auth_type"),
         default_auth_value: Some(row.get("default_auth_value")),
         default_oauth_token_url: Some(row.get("default_oauth_token_url")),

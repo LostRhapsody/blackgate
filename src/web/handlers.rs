@@ -71,6 +71,7 @@ pub struct RouteCollectionFormData {
     pub name: Option<String>,
     pub description: Option<String>,
     pub openapi_spec_url: Option<String>,
+    pub base_upstream_url: Option<String>,
     pub default_auth_type: Option<String>,
     pub default_auth_value: Option<String>,
     pub default_oauth_token_url: Option<String>,
@@ -150,8 +151,77 @@ pub async fn toggle_collection_fields(Query(params): Query<std::collections::Has
     let auth_fields = crate::web::forms::auth::generate_collection_auth_fields(auth_type.clone(), &form_data);
     
     let disabled = if is_openapi_mode { " disabled" } else { "" };
-    // TODO the fields are disabled, but don't look it. Add some styles to avoid confusion.
-    let disabled_note = if is_openapi_mode { "<small><em>These fields will be automatically filled from the OpenAPI specification</em></small>" } else { "" };
+    let disabled_note = if is_openapi_mode { "<small><em style=\"color: #ffb366;\">These fields will be automatically filled from the OpenAPI specification</em></small>" } else { "" };
+
+    // Handle base URL field based on OpenAPI servers
+    let base_url_field = if is_openapi_mode {
+        // Try to fetch and extract servers from the OpenAPI spec
+        match crate::open_api::fetch_and_extract_servers(openapi_url).await {
+            Ok(servers) => {
+                if servers.is_empty() {
+                    // No servers defined - show manual input with message
+                    format!(r##"
+                        <div>
+                            <label for="base_upstream_url">Base Upstream URL:</label><br>
+                            <input type="url" id="base_upstream_url" name="base_upstream_url" placeholder="https://api.example.com" required>
+                            <small style="color: orange;"><em>No upstream servers are defined in the OpenAPI document, please provide a base URL for this collection to use for its paths</em></small>
+                        </div>
+                    "##)
+                } else if servers.len() == 1 {
+                    // Single server - auto-select it
+                    let server = &servers[0];
+                    let description = server.description.as_deref().unwrap_or("Server from OpenAPI spec");
+                    format!(r##"
+                        <div>
+                            <label for="base_upstream_url">Base Upstream URL:</label><br>
+                            <input type="url" id="base_upstream_url" name="base_upstream_url" value="{}" readonly>
+                            <small style="color: green;"><em>Automatically selected from OpenAPI spec: {}</em></small>
+                        </div>
+                    "##, server.url, description)
+                } else {
+                    // Multiple servers - show dropdown
+                    let mut options = String::new();
+                    for server in &servers {
+                        let description = server.description.as_deref().unwrap_or("No description");
+                        options.push_str(&format!(
+                            r##"<option value="{}">{} - {}</option>"##,
+                            server.url, server.url, description
+                        ));
+                    }
+                    format!(r##"
+                        <div>
+                            <label for="base_upstream_url">Base Upstream URL:</label><br>
+                            <select id="base_upstream_url" name="base_upstream_url" required>
+                                <option value="">Select a server from the OpenAPI spec...</option>
+                                {}
+                            </select>
+                            <small style="color: #ffb366;"><em>Multiple servers found in OpenAPI spec, please select one</em></small>
+                        </div>
+                    "##, options)
+                }
+            },
+            Err(e) => {
+                warn!("Failed to fetch servers from OpenAPI spec: {}", e);
+                // Fallback to manual input
+                format!(r##"
+                    <div>
+                        <label for="base_upstream_url">Base Upstream URL:</label><br>
+                        <input type="url" id="base_upstream_url" name="base_upstream_url" placeholder="https://api.example.com" required>
+                        <small style="color: orange;"><em>Could not fetch server information from OpenAPI spec, please provide a base URL manually</em></small>
+                    </div>
+                "##)
+            }
+        }
+    } else {
+        // Manual mode - show normal input
+        format!(r##"
+            <div>
+                <label for="base_upstream_url">Base Upstream URL:</label><br>
+                <input type="url" id="base_upstream_url" name="base_upstream_url" placeholder="https://api.example.com" required>
+                <small>Base URL that will be prepended to all route paths</small>
+            </div>
+        "##)
+    };
     
     let html = format!(r##"
         <div id="form-fields">
@@ -165,6 +235,8 @@ pub async fn toggle_collection_fields(Query(params): Query<std::collections::Has
                 <label for="description">Description:</label><br>
                 <input type="text" id="description" name="description" placeholder="Brief description of this collection"{}>
             </div>
+            
+            {}
             
             <div>
                 <label for="default_auth_type">Default Authentication Type:</label><br>
@@ -186,6 +258,7 @@ pub async fn toggle_collection_fields(Query(params): Query<std::collections::Has
         disabled_note,
         disabled,
         disabled,
+        base_url_field,
         disabled,
         if auth_type == AuthType::None { " selected" } else { "" },
         if auth_type == AuthType::BasicAuth { " selected" } else { "" },
@@ -611,9 +684,10 @@ pub async fn add_collection_submit(State(state): State<AppState>, Form(form): Fo
             
             // If we have an OpenAPI spec, extract and create routes
             if let Some(spec) = openapi_spec {
+                let base_url = form.base_upstream_url.as_deref().unwrap_or("");
                 match crate::open_api::extract_routes_from_spec(
                     &spec, 
-                    "", // base_upstream_url - empty for now, could be made configurable
+                    base_url, // Use the base URL from the form
                     Some(id), 
                     form.default_rate_limit_per_minute.unwrap_or(60),
                     form.default_rate_limit_per_hour.unwrap_or(1000)
@@ -622,7 +696,7 @@ pub async fn add_collection_submit(State(state): State<AppState>, Form(form): Fo
                         info!("Extracted {} routes from OpenAPI spec", routes.len());
                         
                         // Insert routes with the collection ID
-                        match queries::insert_routes_from_openapi(&state.db, id, &routes, "").await {
+                        match queries::insert_routes_from_openapi(&state.db, id, &routes).await {
                             Ok(_) => {
                                 info!("Successfully created {} routes for collection '{}'", routes.len(), name);
                             },

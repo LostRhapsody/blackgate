@@ -60,6 +60,13 @@ impl Default for OpenApiRoute {
     }
 }
 
+/// Server information extracted from OpenAPI specification
+#[derive(Debug, Clone)]
+pub struct OpenApiServer {
+    pub url: String,
+    pub description: Option<String>,
+}
+
 /// Fetches an OpenAPI specification from a URL and extracts metadata
 /// 
 /// # Arguments
@@ -383,6 +390,40 @@ pub async fn fetch_and_parse_spec(url: &str) -> Result<OpenAPI, OpenApiError> {
     
     // Parse the specification
     parse_openapi_spec(&spec_text)
+}
+
+/// Extracts server information from an OpenAPI specification
+/// 
+/// # Arguments
+/// * `spec` - The parsed OpenAPI specification
+/// 
+/// # Returns
+/// * `Ok(Vec<OpenApiServer>)` - List of servers found in the spec
+/// * `Err(OpenApiError)` - Error occurred during extraction
+pub fn extract_servers_from_spec(spec: &OpenAPI) -> Result<Vec<OpenApiServer>, OpenApiError> {
+    let mut servers = Vec::new();
+
+    for server in &spec.servers  {
+        servers.push(OpenApiServer {
+            url: server.url.clone(),
+            description: server.description.clone(),
+        });
+    }
+    
+    Ok(servers)
+}
+
+/// Fetches an OpenAPI spec and extracts server information
+/// 
+/// # Arguments
+/// * `url` - The URL of the OpenAPI specification
+/// 
+/// # Returns
+/// * `Ok(Vec<OpenApiServer>)` - List of servers found in the spec
+/// * `Err(OpenApiError)` - Error occurred during fetch or parsing
+pub async fn fetch_and_extract_servers(url: &str) -> Result<Vec<OpenApiServer>, OpenApiError> {
+    let spec = fetch_and_parse_spec(url).await?;
+    extract_servers_from_spec(&spec)
 }
 
 #[cfg(test)]
@@ -872,5 +913,83 @@ mod tests {
         assert_eq!(convert_openapi_path_to_route_path("/users/{id}"), "/users/{id}");
         assert_eq!(convert_openapi_path_to_route_path("/api/v1/items/{itemId}/details"), "/api/v1/items/{itemId}/details");
         assert_eq!(convert_openapi_path_to_route_path("/simple"), "/simple");
+    }
+
+    #[test]
+    fn test_extract_servers_from_spec() {
+        let spec_json = r#"
+        {
+            "openapi": "3.0.0",
+            "info": {
+                "title": "Test API",
+                "version": "1.0.0"
+            },
+            "servers": [
+                {
+                    "url": "https://api.example.com",
+                    "description": "Production server"
+                },
+                {
+                    "url": "https://staging-api.example.com",
+                    "description": "Staging server"
+                }
+            ],
+            "paths": {}
+        }
+        "#;
+
+        let spec = parse_openapi_spec(spec_json).unwrap();
+        let servers = extract_servers_from_spec(&spec).unwrap();
+
+        assert_eq!(servers.len(), 2);
+        assert_eq!(servers[0].url, "https://api.example.com");
+        assert_eq!(servers[0].description, Some("Production server".to_string()));
+        assert_eq!(servers[1].url, "https://staging-api.example.com");
+        assert_eq!(servers[1].description, Some("Staging server".to_string()));
+    }
+
+    #[test]
+    fn test_extract_servers_from_spec_no_servers() {
+        let spec_json = r#"
+        {
+            "openapi": "3.0.0",
+            "info": {
+                "title": "Test API",
+                "version": "1.0.0"
+            },
+            "paths": {}
+        }
+        "#;
+
+        let spec = parse_openapi_spec(spec_json).unwrap();
+        let servers = extract_servers_from_spec(&spec).unwrap();
+
+        assert_eq!(servers.len(), 0);
+    }
+
+    #[test]
+    fn test_extract_servers_from_spec_single_server() {
+        let spec_json = r#"
+        {
+            "openapi": "3.0.0",
+            "info": {
+                "title": "Test API",
+                "version": "1.0.0"
+            },
+            "servers": [
+                {
+                    "url": "https://api.example.com"
+                }
+            ],
+            "paths": {}
+        }
+        "#;
+
+        let spec = parse_openapi_spec(spec_json).unwrap();
+        let servers = extract_servers_from_spec(&spec).unwrap();
+
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].url, "https://api.example.com");
+        assert_eq!(servers[0].description, None);
     }
 }

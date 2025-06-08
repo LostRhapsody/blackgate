@@ -793,7 +793,6 @@ pub async fn insert_routes_from_openapi(
     pool: &SqlitePool,
     collection_id: i64,
     routes: &[crate::open_api::OpenApiRoute],
-    default_upstream_prefix: &str,
 ) -> Result<(), sqlx::Error> {
     for route in routes {
         // Convert auth_type string to AuthType enum
@@ -804,7 +803,7 @@ pub async fn insert_routes_from_openapi(
         insert_or_replace_route(
             pool,
             &route.path,
-            &format!("{}{}", default_upstream_prefix, route.path), // upstream
+            &route.upstream, // upstream
             "", // backup_route_path
             Some(collection_id),
             &auth_type,

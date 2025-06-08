@@ -131,14 +131,11 @@ pub async fn auth_fields_form(Query(params): Query<std::collections::HashMap<Str
 }
 
 pub async fn collection_auth_fields_form(Query(params): Query<std::collections::HashMap<String, String>>) -> Html<String> {
-    info!("Generating collection auth fields");
     let default_auth_type = "none".to_string();
     let auth_type_str = params.get("default_auth_type").unwrap_or(&default_auth_type);
-    info!("Auth type for collection auth fields: {}", auth_type_str);
     let auth_type = AuthType::from_str(auth_type_str);
     let form_data = RouteCollectionFormData::default();
     let html = crate::web::forms::auth::generate_collection_auth_fields(auth_type, &form_data);
-    info!("Generated collection auth fields HTML: {}", html);
     Html(html)
 }
 
@@ -514,8 +511,44 @@ pub async fn add_collection_submit(State(state): State<AppState>, Form(form): Fo
     }
 }
 
-pub async fn edit_collection_submit(State(state): State<AppState>, Path(_id): Path<i64>, Form(_form): Form<RouteCollectionFormData>) -> Result<Html<String>, StatusCode> {
-    Ok(collections_list(State(state)).await)
+pub async fn edit_collection_submit(State(state): State<AppState>, Path(id): Path<i64>, Form(form): Form<RouteCollectionFormData>) -> Result<Html<String>, StatusCode> {
+    let auth_type = AuthType::from_str(&form.default_auth_type);
+
+    let result = queries::update_route_collection(
+        &state.db,
+        id,
+        &form.name,
+        &form.description.unwrap_or_default(),
+        &auth_type,
+        &form.default_auth_value.unwrap_or_default(),
+        &form.default_oauth_token_url.unwrap_or_default(),
+        &form.default_oauth_client_id.unwrap_or_default(),
+        &form.default_oauth_client_secret.unwrap_or_default(),
+        &form.default_oauth_scope.unwrap_or_default(),
+        &form.default_jwt_secret.unwrap_or_default(),
+        &form.default_jwt_algorithm.unwrap_or_else(|| "HS256".to_string()),
+        &form.default_jwt_issuer.unwrap_or_default(),
+        &form.default_jwt_audience.unwrap_or_default(),
+        &form.default_jwt_required_claims.unwrap_or_default(),
+        &form.default_oidc_issuer.unwrap_or_default(),
+        &form.default_oidc_client_id.unwrap_or_default(),
+        &form.default_oidc_client_secret.unwrap_or_default(),
+        &form.default_oidc_audience.unwrap_or_default(),
+        &form.default_oidc_scope.unwrap_or_default(),
+        form.default_rate_limit_per_minute.unwrap_or(60),
+        form.default_rate_limit_per_hour.unwrap_or(1000),
+    ).await;
+
+    match result {
+        Ok(_) => {
+            info!("Successfully updated collection with ID: {}", id);
+            Ok(collections_list(State(state)).await)
+        },
+        Err(e) => {
+            error!("Failed to update collection with ID {}: {}", id, e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 pub async fn delete_collection(State(state): State<AppState>, Path(id): Path<i64>) -> Result<Html<String>, StatusCode> {

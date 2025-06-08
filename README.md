@@ -323,6 +323,25 @@ curl http://localhost:3000/rate-test  # Should succeed
 curl http://localhost:3000/rate-test  # Should return 429 Too Many Requests
 ```
 
+# Load Testing Commands
+
+1. Start everything
+`./setup-loadtest.sh`
+
+2. Run tests
+`./run-loadtest.sh`
+
+3. Clean up when done
+`./cleanup-loadtest.sh`
+
+If needed, these commands will help with container teardown and re-building
+```bash
+docker compose -f docker-compose.loadtest.yml down --volumes --remove-orphans
+docker compose -f docker-compose.loadtest.yml down --rmi all
+docker compose -f docker-compose.loadtest.yml build --no-cache
+docker compose -f docker-compose.loadtest.yml up -d
+```
+
 # Settings
 
 Health Check Interval

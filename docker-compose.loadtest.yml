@@ -1,0 +1,61 @@
+services:
+  blackgate:
+    build: .
+    expose:
+      - "3000"
+    ports:
+      - "3000:3000"
+    environment:
+      - RUST_LOG=blackgate=info,tower_http=debug
+      - DATABASE_URL=sqlite:///blackgate.db
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    depends_on:
+      - upstream
+    networks:
+      - loadtest
+    volumes:
+      - ./blackgate.db:/blackgate.db
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  upstream:
+    build: ./upstream-test-server
+    expose:
+      - "8080"
+    ports:
+      - "8080:8080"
+    environment:
+      - RUST_LOG=upstream_test_server=info
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    networks:
+      - loadtest
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+networks:
+  loadtest:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: loadtest-bridge

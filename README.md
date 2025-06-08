@@ -11,11 +11,11 @@ The goal is simple: A rust server that handles common API tasks such as managing
 Current Progress: 15%
 
 ## Features
-- Authentication
-- Store paths and their upstreams in a database
+- Authentication (Basic, OAuth2.0, API Key, OIDC, JWT)
+- Store routes' paths and their upstreams in a database
 - Add, remove, and list routes via the CLI
 - Add, remove, edit and list routes via the Web UI
-- Test Coverage
+- Create collections of routes for sharing authentication and organization
 - oAuth test server for testing oAuth Client Credential flows
 - HTTP Method Validation per-path
 - Detailed metrics for each request via the CLI and Web UI
@@ -29,6 +29,14 @@ Current Progress: 15%
 
 ## Current WIP Feature
 
+**API route collections**
+
+Organize API routes into collections.
+- ✅ Manage routes authentication by collection or route
+- authorization either by collection or by route
+- Bulk actions such as adding/removing entire collections, or many route configs at once
+- ✅ When adding a new route, if it is part of a collection, a message is displayed: "Added authentication to this route will override the route's inherited collection authentication"
+
 **Health Check Updates**
 
 We currently support health checks every 60 seconds, using either a dedicated health check endpoint or a "HEAD" request. The status of the check is displayed on the routes page. Remaining features to implement:
@@ -38,12 +46,7 @@ We currently support health checks every 60 seconds, using either a dedicated he
 
 ## Upcoming features
 
-**API route collections**
-
-Organize API routes into collections.
-- Manage routes authentication and authorization either by collection or by route
-- Bulk actions such as adding/removing entire collections, or many route configs at once
-- When adding a new route, if it is part of a collection, a message is displayed: "Added authentication to this route will override the route's inherited collection authentication"
+...
 
 **Tenant-based Authorization**
 

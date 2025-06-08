@@ -109,6 +109,34 @@ pub fn generate_route_form(
                     <button type="button" hx-get="/web/routes" hx-target="#content" hx-swap="innerHTML">Cancel</button>
                 </div>
             </form>
+            <script>
+                const collectionSelect = document.getElementById('collection_id');
+                const authTypeDiv = collectionSelect.closest('form').querySelector('div:has(#auth_type)');
+                
+                function updateAuthMessage() {{
+
+                    // Remove existing message if present
+                    const existingMessage = authTypeDiv.querySelector('.collection-auth-message');
+                    if (existingMessage) {{
+                        existingMessage.remove();
+                    }}
+                    
+                    // Add message if a collection is selected
+                    if (collectionSelect.value !== '') {{
+                        const message = document.createElement('p');
+                        message.className = 'collection-auth-message';
+                        message.style.color = '#ffb366';
+                        message.innerHTML = 'This route is part of a collection, so it will inherit the collection\'s authentication. Fill in the authentication fields here to <strong>override</strong> this route\'s inherited authentication.';
+                        authTypeDiv.appendChild(message);
+                    }}
+                }}
+                
+                // Initial check
+                updateAuthMessage();
+                
+                // Listen for changes
+                collectionSelect.addEventListener('change', updateAuthMessage);
+            </script>
         "##,
         title,
         action,

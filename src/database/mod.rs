@@ -18,7 +18,7 @@
 
 pub mod queries;
 
-use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePool, Row, Sqlite};
+use sqlx::{migrate::MigrateDatabase, sqlite::{SqlitePool, SqlitePoolOptions}, Row, Sqlite};
 use std::collections::HashMap;
 use tracing::{error, info, warn};
 
@@ -47,9 +47,17 @@ impl DatabaseManager {
         Self { pool }
     }
 
-    /// Connect to the database, creating the file if it doesn't exist
-    pub async fn connect_with_file_creation(database_url: &str) -> Result<Self, sqlx::Error> {
-        info!("Opening the Black Gate to: {}", database_url);
+    /// Connect to the database with optimized connection pool settings
+    pub async fn connect_with_file_creation_optimized(database_url: &str) -> Result<Self, sqlx::Error> {
+        info!("Opening the Black Gate to: {} (with optimized connection pool)", database_url);
+
+        // Create optimized connection pool
+        let pool_options = SqlitePoolOptions::new()
+            .max_connections(20)        // Allow up to 20 concurrent connections
+            .min_connections(5)         // Keep 5 connections warm at all times
+            .acquire_timeout(std::time::Duration::from_secs(5))  // 5 second timeout for acquiring connections
+            .idle_timeout(std::time::Duration::from_secs(300))   // Close idle connections after 5 minutes
+            .max_lifetime(std::time::Duration::from_secs(1800)); // Recreate connections every 30 minutes
 
         // if it does not exist, create and apply migrations then leave
         if !Sqlite::database_exists(database_url).await.unwrap_or(false) {
@@ -58,26 +66,30 @@ impl DatabaseManager {
             info!("Database does not exist at {}, creating it", database_url);
             Sqlite::create_database(database_url).await?;
 
-            // check
-            let pool = SqlitePool::connect(database_url).await?;
+            // check with optimized pool
+            let pool = pool_options.connect(database_url).await?;
             sqlx::query("SELECT 1").execute(&pool).await?;
-            info!("Database created successfully at {}", database_url);
+            info!("Database created successfully at {} with optimized connection pool", database_url);
             info!("Initializing migrations table...");
 
             // apply migrations (initialize)
             let db_manager = Self::new(pool);
+            db_manager.apply_sqlite_optimizations().await?;
             db_manager.create_migrations_table().await?;
             info!("Migrations table created successfully.");
             db_manager.apply_pending_migrations().await?;
 
             info!("Initial migrations applied successfully.");
-            info!("The Black Gate is ready to serve.");
+            info!("The Black Gate is ready to serve with optimized database performance.");
             return Ok(db_manager)
         }
 
-        let pool = SqlitePool::connect(database_url).await?;
+        let pool = pool_options.connect(database_url).await?;
         sqlx::query("SELECT 1").execute(&pool).await?;
-        Ok(Self::new(pool))
+        info!("Connected to existing database with optimized pool (max: 20, min: 5, warm connections)");
+        let db_manager = Self::new(pool);
+        db_manager.apply_sqlite_optimizations().await?;
+        Ok(db_manager)
     }
 
     /// Initialize the database by creating the migrations table if needed
@@ -323,10 +335,68 @@ impl DatabaseManager {
         }
     }
 
+    /// Warm up the connection pool by creating and testing connections
+    pub async fn warm_connection_pool(&self) -> Result<(), sqlx::Error> {
+        info!("Warming up database connection pool...");
+        
+        // Create several connections in parallel to warm up the pool
+        let mut handles = Vec::new();
+        for i in 0..5 {  // Warm up 5 connections (our min_connections setting)
+            let pool = self.pool.clone();
+            let handle = tokio::spawn(async move {
+                let result = sqlx::query("SELECT 1 as warm_check")
+                    .fetch_one(&pool)
+                    .await;
+                match result {
+                    Ok(_) => tracing::debug!("Warm connection {} ready", i),
+                    Err(e) => tracing::warn!("Failed to warm connection {}: {}", i, e),
+                }
+            });
+            handles.push(handle);
+        }
+        
+        // Wait for all connections to be warmed up
+        let mut successful = 0;
+        for handle in handles {
+            if let Ok(_result) = handle.await {
+                successful += 1;
+            }
+        }
+        
+        info!("Database connection pool warmed up: {}/5 connections ready", successful);
+        Ok(())
+    }
+
     /// Get the connection pool.
     #[allow(dead_code)]
     pub fn pool(&self) -> &SqlitePool {
         &self.pool
+    }
+
+    /// Apply SQLite performance optimizations
+    async fn apply_sqlite_optimizations(&self) -> Result<(), sqlx::Error> {
+        info!("Applying SQLite performance optimizations...");
+        
+        // Enable WAL mode for better concurrency
+        sqlx::query("PRAGMA journal_mode = WAL").execute(&self.pool).await?;
+        
+        // Optimize synchronous mode for better performance
+        sqlx::query("PRAGMA synchronous = NORMAL").execute(&self.pool).await?;
+        
+        // Increase cache size (negative value means KB, positive means pages)
+        sqlx::query("PRAGMA cache_size = -64000").execute(&self.pool).await?; // 64MB cache
+        
+        // Optimize temp storage
+        sqlx::query("PRAGMA temp_store = MEMORY").execute(&self.pool).await?;
+        
+        // Set busy timeout to handle concurrent access
+        sqlx::query("PRAGMA busy_timeout = 5000").execute(&self.pool).await?; // 5 seconds
+        
+        // Enable query optimization
+        sqlx::query("PRAGMA optimize").execute(&self.pool).await?;
+        
+        info!("SQLite performance optimizations applied successfully");
+        Ok(())
     }
 }
 
@@ -404,10 +474,11 @@ impl MigrationCli {
 //****                       Public Functions                            ****//
 ///////////////////////////////////////////////////////////////////////////////
 
-/// Initialize the database with default settings
+/// Initialize the database with optimized connection pool settings
 pub async fn initialize_database(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
-    let db_manager = DatabaseManager::connect_with_file_creation(database_url).await?;
+    let db_manager = DatabaseManager::connect_with_file_creation_optimized(database_url).await?;
     db_manager.initialize().await?;
+    db_manager.warm_connection_pool().await?;
     Ok(db_manager.pool)
 }
 

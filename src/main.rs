@@ -48,6 +48,7 @@ struct AppState {
     token_cache: Arc<Mutex<OAuthTokenCache>>,
     rate_limiter: Arc<Mutex<RateLimiter>>,
     route_cache: Arc<RwLock<HashMap<String, RouteConfig>>>,
+    http_client: reqwest::Client,
 }
 
 #[tokio::main]

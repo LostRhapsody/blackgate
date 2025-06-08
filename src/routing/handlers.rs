@@ -63,12 +63,10 @@
 
 use axum::{extract::OriginalUri, http::{HeaderMap, Method}};
 use sqlx::Row;
-use std::sync::Arc;
 use tokio::time::Instant;
 use tracing::{info, warn, error};
 use crate::{
     auth::{apply_authentication, types::AuthType}, 
-    health::{HealthChecker, HealthStatus},
     metrics::{store_metrics, RequestMetrics}, 
     rate_limiter::check_rate_limit, 
     AppState, 
@@ -398,9 +396,8 @@ pub async fn handle_request_core(
         "Routing to upstream"
     );
 
-    // Create the request builder
-    let client = reqwest::Client::new();
-    let builder = client.request(method, &auth_route_config.upstream);
+    // Use the pooled HTTP client
+    let builder = state.http_client.request(method, &auth_route_config.upstream);
 
     // Apply authentication
     let builder = match apply_authentication(

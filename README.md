@@ -8,7 +8,7 @@ The Black Gate Project, or Black Gate for short, is an open source API Gateway.
 
 The goal is simple: A rust server that handles common API tasks such as managing routes, upstreams, authentication, authorization, metrics, logging, and documentation, controlled through a CLI or Web User Interface.
 
-Current Progress: 15%
+Current Progress: 45%
 
 ## Features
 - Authentication (Basic, OAuth2.0, API Key, OIDC, JWT)
@@ -94,7 +94,6 @@ $ curl -X POST http://localhost:3000/warehouse -d '{"payload": "test"}' -H "Cont
 ## Next Steps
 - Tenant based Authorization (Restrict routes and actions based on the client we recceive the request from)
 - Enhanced rate limiting features (IP-based limiting, custom time windows)
-- Enhanced web UI (Mostly complete, will just be enhanced with new features as we go, maybe more modern styles, low-priority)
 - API Composition - aggregate data from multiple services into a single response, simplifying client-side logic
 - Protocol translation - bridge the gap between HTTP, WebSocket, gRPC, etc, simplifying client-side logic
 - Data transloation - convert requests and responses to and from JSON and XML (and other common syntaxes for data representation)
@@ -102,11 +101,8 @@ $ curl -X POST http://localhost:3000/warehouse -d '{"payload": "test"}' -H "Cont
 - OpenAPI Specification Support - Automatically add all the routes from an OpenAPI spec to your Gateway
 - Code Stub Generation - Generate code based on OpenAPI Specs or your Gateway's routes
 - OpenAPI Specification Generation - Generate barebones OpenAPI Sepcs based on your routes
-- API Health checks - confirm the status and uptime of an API and display it
-- Automatic API route backups - provide 'backup' routes for specific routes if that route's API is not available
 - Secure Credential Management - Currently, credentials are added per-route, but could be stored outside the route schema and managed independantly
 - Documentation support - include API documentation (or at the least, links to it) in the Gateway
-- Collections - combine related routes into a single API collection to keep routes organized
 - Payment Gateway support - Make it easy to set up PayPal, Stripe, and Braintree in your Gateway, switch between them during outages, and provide intuitive check-out form solutions
 - Import/Export for routes and metrics
 

@@ -67,7 +67,7 @@ use tokio::time::Instant;
 use tracing::{info, warn, error};
 use crate::{
     auth::{apply_authentication, types::AuthType}, 
-    metrics::{store_metrics, RequestMetrics}, 
+    metrics::{store_metrics_async, RequestMetrics}, 
     rate_limiter::check_rate_limit, 
     AppState, 
     database::queries
@@ -247,7 +247,7 @@ pub async fn handle_request_core(
             );
 
             metrics.set_error("Route not found".to_string());
-            store_metrics(&state.db, &metrics).await;
+            store_metrics_async(state.db.clone(), metrics);
 
             return axum::response::Response::builder()
                 .status(404)
@@ -267,7 +267,7 @@ pub async fn handle_request_core(
         );
 
         metrics.set_error("Method Not Allowed".to_string());
-        store_metrics(&state.db, &metrics).await;
+        store_metrics_async(state.db.clone(), metrics);
 
         return axum::response::Response::builder()
             .status(405)
@@ -284,7 +284,7 @@ pub async fn handle_request_core(
             state.rate_limiter.clone(),
             &mut metrics,
         ).await {
-            store_metrics(&state.db, &metrics).await;
+            store_metrics_async(state.db.clone(), metrics);
             return response;
         }  
     }     
@@ -418,7 +418,7 @@ pub async fn handle_request_core(
             );
 
             metrics.set_error("Authentication failed".to_string());
-            store_metrics(&state.db, &metrics).await;
+            store_metrics_async(state.db.clone(), metrics);
 
             return response;
         }
@@ -446,7 +446,7 @@ pub async fn handle_request_core(
             );
 
             metrics.set_error(format!("Upstream request failed: {}", e));
-            store_metrics(&state.db, &metrics).await;
+            store_metrics_async(state.db.clone(), metrics);
 
             return axum::response::Response::builder()
                 .status(502)
@@ -468,7 +468,7 @@ pub async fn handle_request_core(
             );
 
             metrics.set_error(format!("Failed to read response body: {}", e));
-            store_metrics(&state.db, &metrics).await;
+            store_metrics_async(state.db.clone(), metrics);
 
             return axum::response::Response::builder()
                 .status(502)
@@ -496,8 +496,8 @@ pub async fn handle_request_core(
         "Request completed successfully"
     );
 
-    // Store metrics in database
-    store_metrics(&state.db, &metrics).await;
+    // Store metrics in database asynchronously (non-blocking)
+    store_metrics_async(state.db.clone(), metrics);
 
     axum::response::Response::builder()
         .status(response_status)

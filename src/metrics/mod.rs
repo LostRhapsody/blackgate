@@ -1,4 +1,3 @@
-
 //! # Metrics Module
 //! 
 //! This module provides a struct for tracking and recording
@@ -150,6 +149,37 @@ pub async fn store_metrics(pool: &SqlitePool, metrics: &RequestMetrics) {
     } else {
         debug!("Stored metrics for request {}", metrics.id);
     }
+}
+
+/// Store request metrics in the database asynchronously without blocking the request
+pub fn store_metrics_async(pool: SqlitePool, metrics: RequestMetrics) {
+    tokio::spawn(async move {
+        let response_timestamp_str = metrics.response_timestamp.map(|t| t.to_rfc3339());
+        let result = queries::store_request_metrics(
+            &pool,
+            &metrics.id,
+            &metrics.path,
+            &metrics.method,
+            &metrics.request_timestamp.to_rfc3339(),
+            response_timestamp_str.as_deref(),
+            metrics.duration_ms,
+            metrics.request_size_bytes,
+            metrics.response_size_bytes,
+            metrics.response_status_code,
+            &metrics.upstream_url.as_deref().unwrap_or(""),
+            &metrics.auth_type,
+            &metrics.client_ip.as_deref().unwrap_or(""),
+            &metrics.user_agent.as_deref().unwrap_or(""),
+            metrics.error_message.as_deref(),
+        )
+        .await;
+
+        if let Err(e) = result {
+            error!("Failed to store metrics: {}", e);
+        } else {
+            debug!("Stored metrics for request {}", metrics.id);
+        }
+    });
 }
 
 ///////////////////////////////////////////////////////////////////////////////

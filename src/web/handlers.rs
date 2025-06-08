@@ -384,7 +384,8 @@ pub async fn add_route_submit(State(state): State<AppState>, Form(form): Form<Ro
         &form.path,
         &form.upstream,
         &form.backup_route_path.unwrap_or_default(),
-        form.collection_id,
+        // Column is nullable, for "no collection", we just pass in None to make it null and not connected to any collections
+        if form.collection_id == Some(0) { None } else { form.collection_id },
         &auth_type_enum,
         &form.auth_value.unwrap_or_default(),
         &form.allowed_methods.unwrap_or_default(),

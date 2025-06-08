@@ -63,14 +63,11 @@
 
 use axum::{extract::OriginalUri, http::{HeaderMap, Method}};
 use sqlx::Row;
+use std::sync::Arc;
 use tokio::time::Instant;
 use tracing::{info, warn, error};
 use crate::{
-    auth::{apply_authentication, types::AuthType}, 
-    metrics::{store_metrics_async, RequestMetrics}, 
-    rate_limiter::check_rate_limit, 
-    AppState, 
-    database::queries
+    auth::{apply_authentication, types::AuthType}, database::queries, health::{HealthChecker, HealthStatus}, metrics::{store_metrics, store_metrics_async, RequestMetrics}, rate_limiter::check_rate_limit, AppState
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -88,7 +85,7 @@ pub struct RouteConfig {
     pub allowed_methods: String,
     pub rate_limit_per_minute: i64,
     pub rate_limit_per_hour: i64,
-    pub backup_upstream: Option<String>,
+    pub backup_path: Option<String>,
     pub collection_id: Option<i64>,
     pub oauth_token_url: Option<String>,
     pub oauth_client_id: Option<String>,
@@ -256,7 +253,7 @@ pub async fn handle_request_core(
         }
     };
 
-    // Check if method is allowed
+    // check if method is allowed
     if !is_method_allowed(&method, &route_config.allowed_methods) {
         warn!(
             request_id = %metrics.id,
@@ -287,7 +284,142 @@ pub async fn handle_request_core(
             store_metrics_async(state.db.clone(), metrics);
             return response;
         }  
-    }     
+    }  
+
+    // Check route health status for the backup route fallback
+    let health_checker = HealthChecker::new(Arc::new(state.db.clone()));
+    let current_route = route_config;
+    
+    // Try to get a healthy route (either the primary or backup)
+    let route_config = match health_checker.fetch_route_for_health_check(&path).await {
+        Ok(health_routes) => {
+            // If we have health check data, check the primary route first
+            if let Some(health_route) = health_routes.first() {
+                // Check the health status of the primary route
+                if health_route.health_check_status == HealthStatus::Unhealthy {
+                    // If primary route is unhealthy, check for backup route
+                    warn!(
+                        request_id = %metrics.id,
+                        path = %path,
+                        "Primary route is unhealthy, checking for backup route"
+                    );
+
+                    // Check if this route has a backup_route_path configured
+                    let backup_route_path: String = current_route.backup_path.clone().unwrap_or_default();
+                    if !backup_route_path.is_empty() {
+                        // backup is configured, attempt to use it
+                        info!(
+                            request_id = %metrics.id,
+                            path = %path,
+                            backup_path = %backup_route_path,
+                            "Attempting to use backup route"
+                        );
+
+                        // Fetch the backup route configuration
+                        match get_cached_route_config(&state, &backup_route_path).await {
+                            Some(backup_route) => {
+                                // Check if backup route is healthy
+                                match health_checker.fetch_route_for_health_check(&backup_route_path).await {
+                                    Ok(backup_health_routes) => {
+                                        // we have backup health data, check the backup route's health status
+                                        if let Some(backup_health_route) = backup_health_routes.first() {                                                    
+                                            if backup_health_route.health_check_status == HealthStatus::Healthy {
+                                                // backup is healthy, switch to it
+                                                info!(
+                                                    request_id = %metrics.id,
+                                                    path = %path,
+                                                    backup_path = %backup_route_path,
+                                                    "Backup route is healthy, switching to backup"
+                                                );
+                                                metrics.path = backup_route_path.clone();
+                                                backup_route
+                                            } else {
+                                                // backup is unhealthy, log it and use the primary route
+                                                warn!(
+                                                    request_id = %metrics.id,
+                                                    path = %path,
+                                                    backup_path = %backup_route_path,
+                                                    "Backup route is also unhealthy, using primary anyway"
+                                                );
+                                                current_route
+                                            }
+                                        } else {
+                                            // if we have no health data for the backup route, log it and use the backup anyway
+                                            info!(
+                                                request_id = %metrics.id,
+                                                path = %path,
+                                                backup_path = %backup_route_path,
+                                                "No health data for backup route, using backup anyway"
+                                            );
+                                            metrics.path = backup_route_path.clone();
+                                            backup_route
+                                        }
+                                    }
+                                    Err(e) => {
+                                        // if backup route's health check fails we'll log it but still use the backup route
+                                        warn!(
+                                            request_id = %metrics.id,
+                                            path = %path,
+                                            backup_path = %backup_route_path,
+                                            error = %e,
+                                            "Failed to check backup route health, using backup anyway"
+                                        );
+                                        metrics.path = backup_route_path.clone();
+                                        backup_route
+                                    }
+                                }
+                            }
+                            None => {
+                                // if backup route is not found in the database, log it and use the primary route
+                                error!(
+                                    request_id = %metrics.id,
+                                    path = %path,
+                                    backup_path = %backup_route_path,
+                                    "Backup route not found in database, using unhealthy primary"
+                                );
+                                current_route
+                            }
+                        }
+                    } else {
+                        // tried to use a backup route but none is configured
+                        warn!(
+                            request_id = %metrics.id,
+                            path = %path,
+                            "No backup route configured, using unhealthy primary"
+                        );
+                        current_route
+                    }
+                } else {
+                    // if not unhealthy, use the primary route
+                    info!(
+                        request_id = %metrics.id,
+                        path = %path,
+                        health_status = %health_route.health_check_status.to_string(),
+                        "Primary route health check passed"
+                    );
+                    current_route
+                }
+            } else {
+                // if no health check data is found, use the primary route
+                info!(
+                    request_id = %metrics.id,
+                    path = %path,
+                    "No health check data found for route, using primary"
+                );
+                current_route
+            }
+        }
+        Err(e) => {
+            // if health check fails, log the error and use the primary route
+            warn!(
+                request_id = %metrics.id,
+                path = %path,
+                error = %e,
+                "Failed to fetch route health status, using primary anyway"
+            );
+            current_route
+        }
+    };
 
     // Determine final authentication configuration
     // Check if route uses collection authentication (route auth is None and has collection)
@@ -354,7 +486,7 @@ pub async fn handle_request_core(
         allowed_methods: route_config.allowed_methods.clone(),
         rate_limit_per_minute: route_config.rate_limit_per_minute,
         rate_limit_per_hour: route_config.rate_limit_per_hour,
-        backup_upstream: route_config.backup_upstream.clone(),
+        backup_path: route_config.backup_path.clone(),
         collection_id: route_config.collection_id,
         oauth_token_url: final_oauth_token_url,
         oauth_client_id: final_oauth_client_id,
@@ -391,8 +523,8 @@ pub async fn handle_request_core(
 
     info!(
         request_id = %metrics.id,
-        upstream = %auth_route_config.upstream,
-        auth_type = %auth_route_config.auth_type.to_string(),
+        upstream = %route_config.upstream,
+        auth_type = %route_config.auth_type.to_string(),
         "Routing to upstream"
     );
 
@@ -518,7 +650,7 @@ fn build_route_config_from_row(row: &sqlx::sqlite::SqliteRow) -> RouteConfig {
         allowed_methods: row.get("allowed_methods"),
         rate_limit_per_minute: row.get("rate_limit_per_minute"),
         rate_limit_per_hour: row.get("rate_limit_per_hour"),
-        backup_upstream: {
+        backup_path: {
             let backup_path: String = row.get("backup_route_path");
             if backup_path.is_empty() { None } else { Some(backup_path) }
         },
@@ -602,3 +734,8 @@ fn is_method_allowed(method: &Method, allowed_methods: &str) -> bool {
     let allowed_methods: Vec<&str> = allowed_methods.split(',').collect();
     allowed_methods.contains(&method.as_str())
 }
+
+///////////////////////////////////////////////////////////////////////////////
+//****                              Tests                                ****//
+///////////////////////////////////////////////////////////////////////////////
+// Tests for these are handled in the tests module for now

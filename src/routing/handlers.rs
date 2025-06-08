@@ -277,17 +277,19 @@ pub async fn handle_request_core(
             .unwrap();
     }
 
-    // Check rate limits
-    if let Err(response) = check_rate_limit(
-        &path,
-        route_config.rate_limit_per_minute,
-        route_config.rate_limit_per_hour,
-        state.rate_limiter.clone(),
-        &mut metrics,
-    ).await {
-        store_metrics(&state.db, &metrics).await;
-        return response;
-    }
+    // Check rate limits. If both limits are 0, skip rate limiting
+    if route_config.rate_limit_per_minute > 0 || route_config.rate_limit_per_hour > 0 {
+        if let Err(response) = check_rate_limit(
+            &path,
+            route_config.rate_limit_per_minute,
+            route_config.rate_limit_per_hour,
+            state.rate_limiter.clone(),
+            &mut metrics,
+        ).await {
+            store_metrics(&state.db, &metrics).await;
+            return response;
+        }  
+    }     
 
     // Determine final authentication configuration
     // Check if route uses collection authentication (route auth is None and has collection)

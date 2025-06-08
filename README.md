@@ -365,10 +365,10 @@ Health Check Interval
 
 Default Rate Limits Per Mintues
 - key: `default_rate_limit_per_minute`
-- value: `60`
-- description: `Default rate limit per minute for new routes`
+- value: `0`
+- description: `Default rate limit per minute for new routes, 0 means no limit`
 
 Default Rate Limits Per Hour
 - key: `default_rate_limit_per_hour`
-- value: `1000`
-- description: `Default rate limit per hour for new routes`
+- value: `0`
+- description: `Default rate limit per hour for new routes, 0 means no limit`

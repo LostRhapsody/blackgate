@@ -176,8 +176,8 @@ impl DatabaseManager {
                         ('/api/test', 'https://httpbin.org/get', 'GET');
                     -- Default settings
                     INSERT INTO settings (key, value, description) VALUES
-                        ('default_rate_limit_per_minute', '60', 'Default rate limit per minute for new routes'),
-                        ('default_rate_limit_per_hour', '1000', 'Default rate limit per hour for new routes'),
+                        ('default_rate_limit_per_minute', '0', 'Default rate limit per minute for new routes'),
+                        ('default_rate_limit_per_hour', '0', 'Default rate limit per hour for new routes'),
                         ('health_check_interval_seconds', '60', 'Health check interval in seconds, requries restart');                        
                 "#.to_string(),
             },
@@ -211,8 +211,8 @@ impl DatabaseManager {
                         default_oidc_audience TEXT,
                         default_oidc_scope TEXT,
                         -- Default rate limiting
-                        default_rate_limit_per_minute INTEGER DEFAULT 60,
-                        default_rate_limit_per_hour INTEGER DEFAULT 1000,
+                        default_rate_limit_per_minute INTEGER,
+                        default_rate_limit_per_hour INTEGER,
                         -- Metadata
                         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

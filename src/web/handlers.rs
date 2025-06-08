@@ -674,8 +674,8 @@ pub async fn add_collection_submit(State(state): State<AppState>, Form(form): Fo
         &form.default_oidc_client_secret.unwrap_or_default(),
         &form.default_oidc_audience.unwrap_or_default(),
         &form.default_oidc_scope.unwrap_or_default(),
-        form.default_rate_limit_per_minute.unwrap_or(60),
-        form.default_rate_limit_per_hour.unwrap_or(1000),
+        form.default_rate_limit_per_minute.unwrap_or(DEFAULT_RATE_LIMIT_PER_MINUTE),
+        form.default_rate_limit_per_hour.unwrap_or(DEFAULT_RATE_LIMIT_PER_HOUR),
     ).await;
 
     match collection_id {
@@ -689,8 +689,8 @@ pub async fn add_collection_submit(State(state): State<AppState>, Form(form): Fo
                     &spec, 
                     base_url, // Use the base URL from the form
                     Some(id), 
-                    form.default_rate_limit_per_minute.unwrap_or(60),
-                    form.default_rate_limit_per_hour.unwrap_or(1000)
+                    form.default_rate_limit_per_minute.unwrap_or(DEFAULT_RATE_LIMIT_PER_MINUTE),
+                    form.default_rate_limit_per_hour.unwrap_or(DEFAULT_RATE_LIMIT_PER_HOUR),
                 ) {
                     Ok(routes) => {
                         info!("Extracted {} routes from OpenAPI spec", routes.len());
@@ -746,8 +746,8 @@ pub async fn edit_collection_submit(State(state): State<AppState>, Path(id): Pat
         &form.default_oidc_client_secret.unwrap_or_default(),
         &form.default_oidc_audience.unwrap_or_default(),
         &form.default_oidc_scope.unwrap_or_default(),
-        form.default_rate_limit_per_minute.unwrap_or(60),
-        form.default_rate_limit_per_hour.unwrap_or(1000),
+        form.default_rate_limit_per_minute.unwrap_or(DEFAULT_RATE_LIMIT_PER_MINUTE),
+        form.default_rate_limit_per_hour.unwrap_or(DEFAULT_RATE_LIMIT_PER_HOUR),
     ).await;
 
     match result {

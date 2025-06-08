@@ -4,7 +4,7 @@ use axum::{extract::{Path, State}, response::Html};
 use hyper::StatusCode;
 use sqlx::Row;
 
-use crate::{AppState, AuthType, web::forms::auth::generate_collection_auth_fields, web::handlers::RouteCollectionFormData, database::queries};
+use crate::{database::queries, rate_limiter::{DEFAULT_RATE_LIMIT_PER_HOUR, DEFAULT_RATE_LIMIT_PER_MINUTE}, web::{forms::auth::generate_collection_auth_fields, handlers::RouteCollectionFormData}, AppState, AuthType};
 
 pub async fn add_collection_form() -> Html<String> {
     let form_data = RouteCollectionFormData::default();
@@ -57,12 +57,12 @@ pub async fn add_collection_form() -> Html<String> {
             
             <div>
                 <label for="default_rate_limit_per_minute">Default Rate Limit (per minute):</label><br>
-                <input type="number" id="default_rate_limit_per_minute" name="default_rate_limit_per_minute" value="60" min="1">
+                <input type="number" id="default_rate_limit_per_minute" name="default_rate_limit_per_minute" value="0" min="1">
             </div>
             
             <div>
                 <label for="default_rate_limit_per_hour">Default Rate Limit (per hour):</label><br>
-                <input type="number" id="default_rate_limit_per_hour" name="default_rate_limit_per_hour" value="1000" min="1">
+                <input type="number" id="default_rate_limit_per_hour" name="default_rate_limit_per_hour" value="0" min="1">
             </div>
 
             <div>
@@ -201,8 +201,8 @@ pub async fn edit_collection_form(State(state): State<AppState>, Path(id): Path<
         if auth_type == AuthType::Jwt { " selected" } else { "" },
         if auth_type == AuthType::Oidc { " selected" } else { "" },
         auth_fields,
-        form_data.default_rate_limit_per_minute.unwrap_or(60),
-        form_data.default_rate_limit_per_hour.unwrap_or(1000)
+        form_data.default_rate_limit_per_minute.unwrap_or(DEFAULT_RATE_LIMIT_PER_MINUTE),
+        form_data.default_rate_limit_per_hour.unwrap_or(DEFAULT_RATE_LIMIT_PER_HOUR)
     );
     
     Ok(Html(html))

@@ -37,8 +37,8 @@ use tokio::time::{Duration, Instant};
 use std::collections::HashMap;
 use tracing::{debug, warn};
 
-pub const DEFAULT_RATE_LIMIT_PER_MINUTE: u32 = 60; // Default rate limit per minute
-pub const DEFAULT_RATE_LIMIT_PER_HOUR: u32 = 1000; // Default rate limit per hour
+pub const DEFAULT_RATE_LIMIT_PER_MINUTE: u32 = 0; // Default rate limit per minute, none
+pub const DEFAULT_RATE_LIMIT_PER_HOUR: u32 = 0; // Default rate limit per hour, none
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Public Structs                            ****//

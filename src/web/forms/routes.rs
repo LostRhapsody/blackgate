@@ -112,7 +112,7 @@ pub fn generate_route_form(
             <script>
                 const collectionSelect = document.getElementById('collection_id');
                 const authTypeDiv = collectionSelect.closest('form').querySelector('div:has(#auth_type)');
-                
+
                 function updateAuthMessage() {{
 
                     // Remove existing message if present
@@ -122,7 +122,7 @@ pub fn generate_route_form(
                     }}
                     
                     // Add message if a collection is selected
-                    if (collectionSelect.value !== '') {{
+                    if (collectionSelect.value !== '0') {{
                         const message = document.createElement('p');
                         message.className = 'collection-auth-message';
                         message.style.color = '#ffb366';

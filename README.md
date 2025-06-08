@@ -36,6 +36,7 @@ Organize API routes into collections.
 - authorization either by collection or by route
 - Bulk actions such as adding/removing entire collections, or many route configs at once
 - ✅ When adding a new route, if it is part of a collection, a message is displayed: "Added authentication to this route will override the route's inherited collection authentication"
+- When you delete a collection, it will either prevent you from deleting it while routes are in it, OR, you can cascade the table and delete all the assocaited routes. Currentl spits out a 500 error.
 
 **Health Check Updates**
 

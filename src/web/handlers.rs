@@ -551,6 +551,7 @@ pub async fn edit_collection_submit(State(state): State<AppState>, Path(id): Pat
     }
 }
 
+// TODO When you try and delete one but there is a route attached, SQLite will throw an error, we should handle that gracefully
 pub async fn delete_collection(State(state): State<AppState>, Path(id): Path<i64>) -> Result<Html<String>, StatusCode> {
     let result = queries::delete_route_collection(&state.db, id).await;
 

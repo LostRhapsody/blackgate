@@ -126,7 +126,7 @@ pub fn generate_route_form(
                         const message = document.createElement('p');
                         message.className = 'collection-auth-message';
                         message.style.color = '#ffb366';
-                        message.innerHTML = 'This route is part of a collection, so it will inherit the collection\'s authentication. Fill in the authentication fields here to <strong>override</strong> this route\'s inherited authentication.';
+                        message.innerHTML = 'This route is part of a collection, so it will inherit the collection\'s authentication. Leave Type as None to use the collections authentication. Fill in the authentication fields here to <strong>override</strong> this route\'s inherited authentication.';
                         authTypeDiv.appendChild(message);
                     }}
                 }}

@@ -284,9 +284,6 @@ pub fn extract_routes_from_spec(
 ) -> Result<Vec<OpenApiRoute>, OpenApiError> {
     let mut routes = Vec::new();
     
-    // Get the default authentication type from the spec
-    let default_auth_type = determine_auth_type(spec);
-    
     // Parse each path in the OpenAPI spec
     for (path, path_item) in &spec.paths.paths {
         // Skip if this is a reference (we don't resolve references yet)

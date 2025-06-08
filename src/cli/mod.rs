@@ -74,6 +74,7 @@ use crate::database::{
     MigrationCli,
     queries,
 };
+use crate::rate_limiter::{DEFAULT_RATE_LIMIT_PER_HOUR, DEFAULT_RATE_LIMIT_PER_MINUTE};
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                        Private Structs                            ****//
@@ -693,8 +694,8 @@ pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
                         &default_oidc_client_secret.unwrap_or_else(|| "".into()),
                         &default_oidc_audience.unwrap_or_else(|| "".into()),
                         &default_oidc_scope.unwrap_or_else(|| "".into()),
-                        default_rate_limit_per_minute.unwrap_or(60),
-                        default_rate_limit_per_hour.unwrap_or(1000),
+                        default_rate_limit_per_minute.unwrap_or(DEFAULT_RATE_LIMIT_PER_MINUTE),
+                        default_rate_limit_per_hour.unwrap_or(DEFAULT_RATE_LIMIT_PER_HOUR),
                     )
                     .await
                     .expect("Failed to add collection");

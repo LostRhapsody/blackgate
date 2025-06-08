@@ -54,8 +54,8 @@ impl Default for OpenApiRoute {
             allowed_methods: String::new(),
             auth_type: "none".to_string(),
             collection_id: None,
-            rate_limit_per_minute: 60,
-            rate_limit_per_hour: 1000,
+            rate_limit_per_minute: 0,
+            rate_limit_per_hour: 0,
         }
     }
 }
@@ -685,7 +685,7 @@ mod tests {
         "#;
 
         let spec = parse_openapi_spec(spec_json).unwrap();
-        let routes = extract_routes_from_spec(&spec, "https://api.example.com", None, 60, 1000).unwrap();
+        let routes = extract_routes_from_spec(&spec, "https://api.example.com", None, 0, 0).unwrap();
         
         assert_eq!(routes.len(), 1); // One route for the /test path
         
@@ -695,8 +695,8 @@ mod tests {
         assert_eq!(route.allowed_methods, "GET,POST");
         assert_eq!(route.auth_type, "none");
         assert_eq!(route.collection_id, None);
-        assert_eq!(route.rate_limit_per_minute, 60);
-        assert_eq!(route.rate_limit_per_hour, 1000);
+        assert_eq!(route.rate_limit_per_minute, 0);
+        assert_eq!(route.rate_limit_per_hour, 0);
     }
 
     #[test]
@@ -724,7 +724,7 @@ mod tests {
         "#;
 
         let spec = parse_openapi_spec(spec_json).unwrap();
-        let routes = extract_routes_from_spec(&spec, "https://api.example.com", Some(123), 60, 1000).unwrap();
+        let routes = extract_routes_from_spec(&spec, "https://api.example.com", Some(123), 0, 0).unwrap();
         
         assert_eq!(routes.len(), 1);
         
@@ -734,8 +734,8 @@ mod tests {
         assert_eq!(route.allowed_methods, "GET");
         assert_eq!(route.auth_type, "none");
         assert_eq!(route.collection_id, Some(123));
-        assert_eq!(route.rate_limit_per_minute, 60);
-        assert_eq!(route.rate_limit_per_hour, 1000);
+        assert_eq!(route.rate_limit_per_minute, 0);
+        assert_eq!(route.rate_limit_per_hour, 0);
     }
 
     #[test]
@@ -752,7 +752,7 @@ mod tests {
         "#;
 
         let spec = parse_openapi_spec(spec_json).unwrap();
-        let result = extract_routes_from_spec(&spec, "https://api.example.com", None, 60, 1000);
+        let result = extract_routes_from_spec(&spec, "https://api.example.com", None, 0, 0);
         
         assert!(result.is_err());
         

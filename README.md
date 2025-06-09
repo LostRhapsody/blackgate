@@ -107,14 +107,14 @@ Currently, the application's logging is a bit all over the place. While the logs
 
 ---
 
-### Authentication Schemes Supported
+# Authentication Schemes Supported
 - oAuth2.0 Client Credentials
 - API Keys
 - JWT
 - OIDC (un-tested)
 - Basic Authentication (username:password base64 encoded)
 
-## Example (Using httpbin.org)
+# Example (Using httpbin.org)
 ```bash
 $ cargo run -- add-route --path /post --upstream https://httpbin.org/post --auth-type api-key --auth-value "Bearer warehouse_key" --rate-limit-per-minute 30 --rate-limit-per-hour 500
 $ cargo run -- start
@@ -139,11 +139,11 @@ $ curl -X POST http://localhost:3000/post -d '{"payload": "test"}' -H "Content-T
 }
 ```
 
-## Metrics and Monitoring
+# Metrics and Monitoring
 
 Black Gate includes comprehensive metrics tracking for all requests passing through the gateway:
 
-### Features
+## Features
 - Track all incoming requests and responses
 - Measure request duration from start to finish, including upstream response times
 - Track authentication failures, routing errors, upstream failures, and rate limit violations
@@ -151,7 +151,7 @@ Black Gate includes comprehensive metrics tracking for all requests passing thro
 - Monitor request and response payload sizes
 - Track rate limit violations with detailed error messages
 
-### Metrics Data
+## Metrics Data
 Each request tracks:
 - Unique request ID
 - Path and HTTP method
@@ -176,18 +176,18 @@ $env:RUST_LOG = "blackgate=debug"
 cargo run -- start
 ```
 
-## Rate Limiting
+# Rate Limiting
 
 Black Gate includes built-in rate limiting functionality to protect your upstream services from overuse and ensure fair resource allocation.
 
-### Features
+## Features
 - Each route can have its own rate limiting settings
 - Separate limits for per-minute and per-hour windows
 - Returns HTTP 429 (Too Many Requests) when limits are exceeded
 - Uses precise timestamp tracking for accurate rate limiting
 - Rate limit violations are logged in the metrics system
 
-### Default Limits
+## Default Limits
 
 Both per-minute and per-hour rate limits are set to 0 by default, which means "off", no rate limits.
 
@@ -195,7 +195,7 @@ When adding a new route or collection, the rate limits can be set manually.
 
 You can configure new defaults (for example 60 per minute and 1000 per hour) in the settings page.
 
-### Adding Routes with Rate Limits
+## Adding Routes with Rate Limits
 
 **Basic route with default rate limits:**
 ```bash
@@ -211,7 +211,7 @@ cargo run -- add-route \
   --rate-limit-per-hour 100
 ```
 
-### Viewing Route Rate Limits
+## Viewing Route Rate Limits
 
 List all routes with their rate limiting configuration:
 ```bash
@@ -220,7 +220,7 @@ cargo run -- list-routes
 
 Old requests are automatically cleaned up from the tracking system as they expire.
 
-### OIDC (Needs More Support)
+# OIDC (Needs More Support)
 
 This section is for contributors, as I don't really know how OIDC works and this was added mostly by Claude.
 

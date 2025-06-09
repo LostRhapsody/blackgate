@@ -21,13 +21,23 @@ Current Progress: 65%
 
 # Immediate Goals
 
-Black Gate needs a dedicated location for documentation, tutorials, etc. This is the project's current primary concern, as this Read Me file is not the best for navigation and I'm trying to keep it succinct.
+- Black Gate needs a dedicated location for documentation, tutorials, etc. This is the project's current primary concern, as this Read Me file is not the best for navigation and I'm trying to keep it succinct.
+- For improved benchmarking, re-run the benchmarks with various CPU and memory allocations.
+  - 1 cpu, 512 mb
+  - 2 cpu, 4 gb
+  - 3 cpu, 8 gb
+  - 4 cpu, 16 gb
+- Current benchmark is 1 cpu, 512 mb, topping out at around 6,000 req/s.
 
 # Contact for Inquiries
 
 I'm a solo-developer building Black Gate. Contact me via `evan.robertson77@gmail.com` for questions about Black Gate, it's features, or contributing.
 
 # Upcoming features
+
+**Response Caching**
+
+Black Gate currently caches routes and health checks to minimize database reads. To take this a step further, Black Gate will cache requests and responses for a path. If a path is requested with the same parameters and request body as a previous request, we'll serve the cached response directly, cutting out the overhead of the HTTP request entirely. If it's a cache miss, we'll process the request like normal. The Time To Live (TTL) for this cache would be low, 5-30 seconds, to ensure freshness and balance performance and accuracy.
 
 **Database Backups**
 
@@ -76,8 +86,13 @@ After a brief review, there are a few things we could do to improve the producti
 **Rate Limiting Updates**
 - Enhanced rate limiting features (IP-based limiting, custom time windows)
 
+**Throttling Implementation**
+
+Instead of applying a hard-cap on traffic via rate limits, the gateway can *throttle* specific routes, limiting the number of requests coming through at a time. This can help prevent your backend services from being overwhelmed with unexpected traffic.
+
 **API Composition Implementation**
 - Aggregate data from multiple services into a single response, simplifying client-side logic
+- Simplify responses from services so you only receive the information you actually needed, simplifying client-side logic.
 
 **Protocol Translation Implementation**
 - Bridge the gap between HTTP, WebSocket, gRPC, etc, simplifying client-side logic
@@ -106,6 +121,25 @@ This Gateway's primary audience will typically use similar APIs, like payment pr
 **Improved Logging**
 
 Currently, the application's logging is a bit all over the place. While the logs are detailed and helpful, the log-levels are often not set correctly. The usage of `info` or `debug` log-levels is not consistent.
+
+**Nginx Integration**
+
+Implement an Nginx container to act as a reverse proxy to handle request queues and load-balancing for multiple Black Gate Instances. This could help prevent time outs on resource-constrained Black Gate instances, and cache static-resources, reducing Black Gate hits.
+
+**Plugins and Middleware**
+
+Once the MVP features are completed, Black Gate hopes to develop an easy and extensible framework for adding middleware and plugins. This has not even reached planning stages and is just a concept of a plan.
+
+**Generate Credentials API Keys**
+
+Currently, you can provide Black Gate's routes and collections with authentication details, such as API Keys. You cannot create and store keys for use with applications though. For instance, if you wanted to generate an API key for one of your services to communicate with another service, you would need to generate the key elsewhere and add it to your routes manually. In the future, an API Key Vault to store these keys, track who is using them, when they were created, give them certain permissions, give them names, and provide an easy way to add them to rotues would be ideal.
+
+**Automatic Route and Configuration Discovery**
+
+We're is investigating how to let Black Gate automatically detect routes and configurations based on the services deployed on your infrastructure. This has a low-priority for a few reasons. 
+1. Black Gate is developed with simplified client logic in-mind. Black Gate should take the strain off of your services when sending API requests. Auto-discovery, on the other hand, assumes this is your inbound API that other services are hitting. This isn't Black Gate's core goal at the moment. It can still route inbound traffic.
+2. Auto-discovery typically means your services need to be deployed with some sort of configuration meta-data. This means you'll need to change how your application is deployed. While not a deal breaker, we're aiming to reduce application complexity, not add to it.
+3. We're assuming anyone who is adding auto-discovery attributes to their software probably already has an OpenAPI v3.0 specification for their APIs. If this is the case, you can simply import that document into Black Gate, and all your services will be set up automatically, somewhat (but not entirely) negating the usefulness of this feature.
 
 # Authentication Schemes Supported
 - oAuth2.0 Client Credentials flow

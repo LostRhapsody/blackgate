@@ -33,13 +33,13 @@ Current Progress: 45%
 There are quite a few bottlenecks right now. Blocking database queries and health checks mostly. We're improving things one at a time. Currently we're looking at about and extra 90ms per request, just for those processes, while the request itself has a near 3ms latency in reality. This is due to all our database queries and checks.
 
 ✅ Step 1. Route caching. We'll cache routes the first time we fetch them from the database into a simple hashmap to make lookup faster.
-Step 2. Health check caching. Same idea.
-Step 3. Ensure health checks are only ever done async and never blocking. Don't run health checks in the main request logic, just rely on whatever the last check in the DB or cache was.
-Step 4. Improve the method validation, rate limit check, and store metrics async so we don't block the response.
+✅ Step 2. Health check caching. Same idea.
+✅ Step 3. Ensure health checks are only ever done async and never blocking. Don't run health checks in the main request logic, just rely on whatever the last check in the DB or cache was.
+✅ Step 4. Improve the method validation, rate limit check, and store metrics async so we don't block the response.
 ✅ Step 5. Update the database defaults to create more open connections and keep them warm.
 ✅ Step 6. HTTP Connection pooling, don't create a new reqwest::Client every request
 ✅ Step 7. We're setting rate limits by default! These should be turned off by default, actually. Set everything to 0!
-Step 8. Ensure we're not performing any complex auth setup when no auth is configured, so we can skip that step.
+✅ Step 8. Ensure we're not performing any complex auth setup when no auth is configured, so we can skip that step.
 
 
 ## Current WIP Features

@@ -31,6 +31,11 @@ Current Progress: 45%
 
 ## Upcoming features
 
+**Tenant-based Authorization Implementation**
+- Restric route access based on tenant ID
+- Include tenants in metrics for tracking
+- Recieve the tenant ID in the client request and validate it during the authentication pipeline
+
 **Metrics Updates**
 - Update metrics view so we can view ALL the metrics from within a certain window of time.
 - Currently, limited to the last 200 metric logs. Useful, but doesn't provide much helpful info for long-term windows.
@@ -50,11 +55,6 @@ Current Progress: 45%
 - Additional states (i.e. degraded performance)
 - Integration with the metrics system
 - Alerts via a webhook or other notification system
-
-**Tenant-based Authorization Implementation**
-- Restric route access based on tenant ID
-- Include tenants in metrics for tracking
-- Recieve the tenant ID in the client request and validate it during the authentication pipeline
 
 **Rate Limiting Updates**
 - Enhanced rate limiting features (IP-based limiting, custom time windows)

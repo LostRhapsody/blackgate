@@ -26,57 +26,63 @@ Current Progress: 45%
 - Health Checks for endpoints
 - Automatically switch to pre-configured backup routes if the primary upstream is unhealthy
 - Customizable defaults for health check interval and rate limites
+- Load tests
 - Dockerfile included for containerization to self-host
-
-## Performance Improvements
-
-There are quite a few bottlenecks right now. Blocking database queries and health checks mostly. We're improving things one at a time. Currently we're looking at about and extra 90ms per request, just for those processes, while the request itself has a near 3ms latency in reality. This is due to all our database queries and checks.
-
-✅ Step 1. Route caching. We'll cache routes the first time we fetch them from the database into a simple hashmap to make lookup faster.
-✅ Step 2. Health check caching. Same idea.
-✅ Step 3. Ensure health checks are only ever done async and never blocking. Don't run health checks in the main request logic, just rely on whatever the last check in the DB or cache was.
-✅ Step 4. Improve the method validation, rate limit check, and store metrics async so we don't block the response.
-✅ Step 5. Update the database defaults to create more open connections and keep them warm.
-✅ Step 6. HTTP Connection pooling, don't create a new reqwest::Client every request
-✅ Step 7. We're setting rate limits by default! These should be turned off by default, actually. Set everything to 0!
-✅ Step 8. Ensure we're not performing any complex auth setup when no auth is configured, so we can skip that step.
-
-
-## Current WIP Features
-
-**OpenAPI v3.0 Support**
-By submitting an OpenAPI v3.0 URL when creating a collection, Black Gate automatically creates a collection and routes for all the paths in the collection. All that needs to be setup is the authentication in the collection, and all routes should be ready to go.
-
-Stil missing:
-- Extract auth info, like the token URL and scopes, from the spec and add it to the collection.
-- Conversion tool to convert 2.0 to 3.0 specs. I don't plan on creating a new pipeline for 2.0, as it's a lot of additional tools. `swagger2openapi` is a mature, well maintained tool that will be suitable for this.
-
-
-**API route collections**
-
-Organize API routes into collections.
-- ✅ Manage routes authentication by collection or route
-- authorization either by collection or by route
-- Bulk actions such as adding/removing entire collections, or many route configs at once
-- ✅ When adding a new route, if it is part of a collection, a message is displayed: "Added authentication to this route will override the route's inherited collection authentication"
-- When you delete a collection, it will either prevent you from deleting it while routes are in it, OR, you can cascade the table and delete all the assocaited routes. Currentl spits out a 500 error.
-
-**Health Check Updates**
-
-We currently support health checks every 60 seconds, using either a dedicated health check endpoint or a "HEAD" request. The status of the check is displayed on the routes page. Remaining features to implement:
-- Additional states (degraded performance, only applicable to endpoints with real health checks)
-- Integration with the metrics system
-- Alerts via a webhook or other notification system (TBD)
 
 ## Upcoming features
 
-**Tenant-based Authorization**
+**Metrics Updates**
+- Update metrics view so we can view ALL the metrics from within a certain window of time.
+- Currently, limited to the last 200 metric logs. Useful, but doesn't provide much helpful info for long-term windows.
+- Support for payload logging, currently payload is not included in metrics. This is more of a debugging/logging feature, but would fit well into the metrics module. Logging may receive it's own module.
 
+**OpenAPI v3.0 Support Updates**
+- Extract auth info, like the token URL and scopes, from the spec and add it to the collection.
+- Conversion tool to convert 2.0 to 3.0 specs. I don't plan on creating a new pipeline for 2.0, as it's a lot of additional tools. `swagger2openapi` is a mature, well maintained tool that will be suitable for this.
+- Code Stub Generation - Generate code based on OpenAPI Specs or your Gateway's routes
+- OpenAPI Specification Generation - Generate barebones OpenAPI Sepcs based on your routes
+
+**API route collections Updates**
+- Bulk actions such as adding/removing entire collections, or many route configs at once
+- When you delete a collection, it will either prevent you from deleting it while routes are in it, OR, you can cascade the table and delete all the assocaited routes. Currently returns a 500 error.
+
+**Health Check Updates**
+- Additional states (i.e. degraded performance)
+- Integration with the metrics system
+- Alerts via a webhook or other notification system
+
+**Tenant-based Authorization Implementation**
 - Restric route access based on tenant ID
 - Include tenants in metrics for tracking
 - Recieve the tenant ID in the client request and validate it during the authentication pipeline
 
-**Sections with detailed information on features below**
+**Rate Limiting Updates**
+- Enhanced rate limiting features (IP-based limiting, custom time windows)
+
+**API Composition Implementation**
+- Aggregate data from multiple services into a single response, simplifying client-side logic
+
+**Protocol Translation Implementation**
+- Bridge the gap between HTTP, WebSocket, gRPC, etc, simplifying client-side logic
+
+**Data Transformation and Orchestration Implementation**
+- Convert requests and responses to and from JSON and XML (and other common syntaxes for data representation)
+- Modify request/response data and manage complex workflows
+
+**Secure Credential Management Implementation**
+- Currently, credentials are added per-route or per-collection as plain-text, but could be stored outside the route schema and managed independantly via a secure secret storage service
+
+**Documentation**
+- Include API documentation (or at the least, links to it) in the Gateway
+- Build out Blake Gate's documentation
+
+**First-Class Payment Gateway Support Implementation**
+- Built-in support for easily adding PayPal, Stripe, and Braintree in your gateway.
+- Intuitive solutions for check-out form integration
+
+**Import/Export Implementation**
+- Provide Import/Export functions for collections and routes, beyond OpenAPI 3.0 specs
+- Provide Import/Export functions for metrics
 
 ### Authentication Schemes Supported
 - oAuth2.0 Client Credentials
@@ -109,22 +115,6 @@ $ curl -X POST http://localhost:3000/warehouse -d '{"payload": "test"}' -H "Cont
   "url": "https://httpbin.org/post"
 }
 ```
-
----
-
-## Next Steps
-- Tenant based Authorization (Restrict routes and actions based on the client we recceive the request from)
-- Enhanced rate limiting features (IP-based limiting, custom time windows)
-- API Composition - aggregate data from multiple services into a single response, simplifying client-side logic
-- Protocol translation - bridge the gap between HTTP, WebSocket, gRPC, etc, simplifying client-side logic
-- Data transloation - convert requests and responses to and from JSON and XML (and other common syntaxes for data representation)
-- Data transformation and orchestration - modify request/response data and manage complex workflows
-- Code Stub Generation - Generate code based on OpenAPI Specs or your Gateway's routes
-- OpenAPI Specification Generation - Generate barebones OpenAPI Sepcs based on your routes
-- Secure Credential Management - Currently, credentials are added per-route, but could be stored outside the route schema and managed independantly
-- Documentation support - include API documentation (or at the least, links to it) in the Gateway
-- Payment Gateway support - Make it easy to set up PayPal, Stripe, and Braintree in your Gateway, switch between them during outages, and provide intuitive check-out form solutions
-- Import/Export for routes and metrics
 
 ---
 

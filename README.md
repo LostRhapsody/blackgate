@@ -66,12 +66,12 @@ After a brief review, there are a few things we could do to improve the producti
 
 **API route collections Updates**
 - Bulk actions such as adding/removing entire collections, or many route configs at once
-- When you delete a collection, it will either prevent you from deleting it while routes are in it, OR, you can cascade the table and delete all the assocaited routes. Currently returns a 500 error.
+- When you delete a collection, it will either prevent you from deleting it while routes are in it, OR, you can cascade the table and delete all the assocaited routes. Currently returns a 500 error if you attempt to delete a collection with routes attached. Deleting the routes first allows you to delete the collection.
 
 **Health Check Updates**
-- Additional states (i.e. degraded performance)
+- Additional states such as degraded performance
 - Integration with the metrics system
-- Alerts via a webhook or other notification system
+- Alerts via a webhook or other notification system for unhealthy upstreams
 
 **Rate Limiting Updates**
 - Enhanced rate limiting features (IP-based limiting, custom time windows)
@@ -87,28 +87,28 @@ After a brief review, there are a few things we could do to improve the producti
 - Modify request/response data and manage complex workflows
 
 **Secure Credential Management Implementation**
-- Currently, credentials are added per-route or per-collection as plain-text, but could be stored outside the route schema and managed independantly via a secure secret storage service
+- Currently, credentials are added per-route or per-collection as plain-text. This should be handled using a secrets service. TBD.
 
 **Documentation**
-- Include API documentation (or at the least, links to it) in the Gateway
-- Build out Blake Gate's documentation
+- Include API documentation for routes in the Gateway itself, centralizing both API management AND documentation. This can either be a link to existing documentation or some sort of markdown file/documentation style website. TBD.
+- The Black Gate Project needs a documentation website.
 
 **First-Class Payment Gateway Support Implementation**
+
+This Gateway's primary audience will typically use similar APIs, like payment processors. Black Gate aims to offer "First-Class Support" for certain APIs, making integration with them much easier. To start, the project will focus on payment processors.
+
 - Built-in support for easily adding PayPal, Stripe, and Braintree in your gateway.
 - Intuitive solutions for check-out form integration
 
 **Import/Export Implementation**
-- Provide Import/Export functions for collections and routes, beyond OpenAPI 3.0 specs
-- Provide Import/Export functions for metrics
+- Provide Import/Export functions for collections, routes, and metrics.
 
 **Improved Logging**
 
-Currently, the application's logging is a bit all over the place. While the logs are detailed and helpful, the log-levels are often not set correctly. It's hard to tell if you'll get everything you need in `info` or `debug` log-levels. So, those just need to be cleaned up.
-
----
+Currently, the application's logging is a bit all over the place. While the logs are detailed and helpful, the log-levels are often not set correctly. The usage of `info` or `debug` log-levels is not consistent.
 
 # Authentication Schemes Supported
-- oAuth2.0 Client Credentials
+- oAuth2.0 Client Credentials flow
 - API Keys
 - JWT
 - OIDC (un-tested)

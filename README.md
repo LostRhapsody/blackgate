@@ -8,7 +8,7 @@ The Black Gate Project, or Black Gate for short, is an open source API Gateway.
 
 The goal is simple: A rust server that handles common API tasks such as managing routes, upstreams, authentication, authorization, metrics, logging, and documentation, controlled through a CLI or Web User Interface.
 
-Current Progress: 45%
+Current Progress: 65%
 
 ## Features
 - Authentication (Basic, OAuth2.0, API Key, OIDC, JWT)
@@ -30,6 +30,23 @@ Current Progress: 45%
 - Dockerfile included for containerization to self-host
 
 ## Upcoming features
+
+**Database Backups**
+Currently, no backup solution exists. Currently debating these options, one or a mix of them.
+- Host machine backups
+- s3 bucket backups
+- remote server backups (via SSH keys)
+
+**Production Docker Improvements**
+After a brief review, there are a few things we could do to improve the production-readiness of Black Gate. Despite these, the system is currently considered production ready, and these are mostly operational concerns, not show-stoppers.
+- Configurable CPU/Memory limits
+- Integration with a secret management service like Docker secrets
+- Basic graceful shutdown script
+- Validate required env variables on startup, all have defaults so not a huge concern
+- Multi-stage deployment support (dev/staging/production) via feature flags or environment-based routing
+- Network security (TLS/SSL termination, CORS policy config, IP allow/block list)
+- Webhooks for monitoring
+- Data persistance and recovery (backups, corruption detection, migration rollbacks)
 
 **Tenant-based Authorization Implementation**
 - Restric route access based on tenant ID

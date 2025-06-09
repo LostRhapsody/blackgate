@@ -45,6 +45,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/{*path}", post(handle_post_request))
         .route("/{*path}", put(handle_put_request))
         .route("/{*path}", patch(handle_patch_request))
+        .route("/health", get(|| async { "OK" }))
         .with_state(state)
         .layer(TraceLayer::new_for_http())
 }

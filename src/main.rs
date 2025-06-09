@@ -38,7 +38,7 @@ use auth::{
 };
 use rate_limiter::RateLimiter;
 use metrics::RequestMetrics;
-use database::{initialize_database, BLACKGATE_DB_URL};
+use database::{initialize_database, get_database_url};
 use routing::handlers::RouteConfig;
 use health::HealthChecker;
 
@@ -65,7 +65,10 @@ async fn main() {
 
     info!("Starting Black Gate API Gateway");
 
-    let pool = initialize_database(BLACKGATE_DB_URL)
+    let database_url = get_database_url();
+    info!("Using database: {}", database_url);
+
+    let pool = initialize_database(&database_url)
         .await
         .expect("Failed to initialize database");
 

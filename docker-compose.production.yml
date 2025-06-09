@@ -1,0 +1,35 @@
+services:
+  blackgate:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+    ports:
+      - "3000:3000"
+    volumes:
+      - blackgate_data:/app/data
+      - ./config:/app/config:ro  # Mount configuration files
+    environment:
+      - BLACKGATE_DB_URL=sqlite:///app/data/blackgate.db
+      - RUST_LOG=blackgate=info,tower_http=debug
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - blackgate_network
+
+volumes:
+  blackgate_data:
+    driver: local
+
+networks:
+  blackgate_network:
+    driver: bridge

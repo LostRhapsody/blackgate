@@ -1,0 +1,36 @@
+# Production Dockerfile for Black Gate API Gateway
+FROM rust:1.85 AS builder
+WORKDIR /usr/src/blackgate
+COPY . .
+RUN cargo build --release
+
+FROM debian:bookworm-slim
+RUN apt-get update && \
+    apt-get install -y libsqlite3-0 libssl3 curl ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    useradd --create-home --shell /bin/bash blackgate
+
+WORKDIR /app
+COPY --from=builder /usr/src/blackgate/target/release/blackgate /usr/local/bin/blackgate
+COPY startup.sh /app/startup.sh
+
+# Create data directory for database persistence
+RUN mkdir -p /app/data && chown blackgate:blackgate /app/data && \
+    chmod +x /app/startup.sh
+
+# Switch to non-root user for security
+USER blackgate
+
+# Expose the default port
+EXPOSE 3000
+
+# Set environment variables
+ENV BLACKGATE_DB_URL=sqlite:///app/data/blackgate.db
+ENV RUST_LOG=blackgate=info
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3000/health || exit 1
+
+# Default command runs the startup script
+CMD ["/app/startup.sh"]

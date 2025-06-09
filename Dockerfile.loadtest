@@ -1,3 +1,4 @@
+# Testing file for running load tests, sets up demo routes, used by docker-compose.loadtest.yml
 FROM rust:1.85 AS builder
 WORKDIR /usr/src/blackgate
 COPY . .

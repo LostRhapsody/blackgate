@@ -22,7 +22,11 @@ use sqlx::{migrate::MigrateDatabase, sqlite::{SqlitePool, SqlitePoolOptions}, Ro
 use std::collections::HashMap;
 use tracing::{error, info, warn};
 
-pub const BLACKGATE_DB_URL: &str = "sqlite://blackgate.db";
+/// Get the database URL from environment variable or use default
+pub fn get_database_url() -> String {
+    std::env::var("BLACKGATE_DB_URL")
+        .unwrap_or_else(|_| "sqlite://blackgate.db".to_string())
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Public Structs                            ****//

@@ -17,6 +17,7 @@
 //! CLI commands allow creating new migrations, listing pending ones, and applying them.
 
 pub mod queries;
+pub mod backup;
 
 use sqlx::{migrate::MigrateDatabase, sqlite::{SqlitePool, SqlitePoolOptions}, Row, Sqlite};
 use std::collections::HashMap;
@@ -245,6 +246,33 @@ impl DatabaseManager {
                         ('default', 'Default collection for uncategorized routes', 'none', 60, 1000),
                         ('api_v1', 'Version 1 API routes', 'jwt', 100, 5000),
                         ('public_api', 'Public API endpoints', 'api-key', 30, 500);
+                "#.to_string(),
+            },
+            Migration {
+                version: 3,
+                name: "backup_history".to_string(),
+                sql: r#"
+                    -- Backup History table
+                    CREATE TABLE IF NOT EXISTS backup_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        status TEXT NOT NULL,
+                        started_at TEXT NOT NULL,
+                        completed_at TEXT,
+                        file_size_bytes INTEGER,
+                        s3_key TEXT,
+                        error_message TEXT,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    );
+                    
+                    -- Create index for faster lookups by status and date
+                    CREATE INDEX IF NOT EXISTS idx_backup_history_status ON backup_history(status);
+                    CREATE INDEX IF NOT EXISTS idx_backup_history_started_at ON backup_history(started_at);
+                    
+                    -- Default backup settings
+                    INSERT INTO settings (key, value, description) VALUES
+                        ('backup_enabled', 'false', 'Enable automated database backups to S3'),
+                        ('backup_interval_hours', '24', 'Hours between automated backup runs'),
+                        ('backup_retention_days', '30', 'Days to keep backup files in S3');
                 "#.to_string(),
             },
         ]

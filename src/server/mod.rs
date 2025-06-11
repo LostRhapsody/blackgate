@@ -41,6 +41,10 @@ use crate::auth::oauth::OAuthTokenCache;
 use crate::rate_limiter::RateLimiter;
 use crate::routing::router::create_router;
 use crate::health::HealthChecker;
+use crate::database::{
+    get_database_url,
+    backup::BackupManager,
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                       Public Functions                            ****//
@@ -70,6 +74,12 @@ pub async fn start_server(pool: SqlitePool) {
     // Create a new health checker for the background service Start the health check background service
     let background_health_checker = HealthChecker::new(Arc::new(pool.clone()));
     background_health_checker.start_background_checks();
+
+    let database_url = get_database_url();
+    
+    // Start the database backup background service
+    let backup_manager = BackupManager::new(Arc::new(pool.clone()), database_url);
+    backup_manager.start_background_backups();
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -105,6 +115,10 @@ pub async fn start_server_with_shutdown(
     // Create a new health checker for the background service Start the health check background service
     let background_health_checker = HealthChecker::new(Arc::new(pool.clone()));
     background_health_checker.start_background_checks();
+
+    // Start the database backup background service
+    let backup_manager = BackupManager::new(Arc::new(pool.clone()), "blackgate.db");
+    backup_manager.start_background_backups();
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     let addr = listener.local_addr().unwrap();

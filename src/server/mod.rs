@@ -31,8 +31,8 @@
 //! start_oauth_test_server(pool, 8080).await;
 //! ```
 
-use sqlx::sqlite::SqlitePool;
-use tracing::{info, error};
+use sqlx::{sqlite::SqlitePool, Row};
+use tracing::{info, error, warn};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use tokio::sync::RwLock;
@@ -45,6 +45,8 @@ use crate::database::{
     get_database_url,
     backup::BackupManager,
 };
+use crate::database::queries::get_setting_by_key;
+use crate::cache::ResponseCache;
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                       Public Functions                            ****//
@@ -60,6 +62,10 @@ pub async fn start_server(pool: SqlitePool) {
     // Create shared health checker
     let health_checker = Arc::new(HealthChecker::new(Arc::new(pool.clone())));
 
+    // Create a shared response cache
+    let default_ttl: u64 = get_response_cache_default_ttl(&pool);
+    let response_cache = Arc::new(ResponseCache::new(default_ttl));
+
     let app_state = AppState {
         db: pool.clone(),
         token_cache,
@@ -67,6 +73,7 @@ pub async fn start_server(pool: SqlitePool) {
         route_cache,
         http_client,
         health_checker: health_checker.clone(),
+        response_cache,
     };
 
     let app = create_router(app_state);
@@ -80,6 +87,18 @@ pub async fn start_server(pool: SqlitePool) {
     // Start the database backup background service
     let backup_manager = BackupManager::new(Arc::new(pool.clone()), database_url);
     backup_manager.start_background_backups();
+    
+    // Create a new response cache for the background service
+    let background_response_cache = Arc::new(ResponseCache::new(default_ttl));
+
+    // Start background task to clean up expired cache entries
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60)); // Run every minute
+        loop {
+            interval.tick().await;
+            background_response_cache.cleanup().await;
+        }
+    });
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -100,6 +119,10 @@ pub async fn start_server_with_shutdown(
     
     // Create shared health checker
     let health_checker = Arc::new(HealthChecker::new(Arc::new(pool.clone())));
+
+    // Create a shared response cache
+    let default_ttl: u64 = get_response_cache_default_ttl(&pool);
+    let response_cache = Arc::new(ResponseCache::new(default_ttl));
     
     let app_state = AppState {
         db: pool.clone(),
@@ -108,6 +131,7 @@ pub async fn start_server_with_shutdown(
         route_cache,
         http_client,
         health_checker: health_checker.clone(),
+        response_cache,
     };
 
     let app = create_router(app_state);
@@ -119,6 +143,19 @@ pub async fn start_server_with_shutdown(
     // Start the database backup background service
     let backup_manager = BackupManager::new(Arc::new(pool.clone()), "blackgate.db");
     backup_manager.start_background_backups();
+
+    // Start the response cache background service
+    // TODO move the tokio spawn into the response cache new function
+    // Create a new response cache for the background service
+    let background_response_cache = Arc::new(ResponseCache::new(default_ttl));
+    
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60)); // Run every minute
+        loop {
+            interval.tick().await;
+            background_response_cache.cleanup().await;
+        }
+    });
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -167,4 +204,25 @@ pub async fn start_oauth_test_server(pool: SqlitePool, _port: u16) {
             error!("Failed to listen for shutdown signal: {}", err);
         }
     }
+}
+
+fn get_response_cache_default_ttl(pool: &SqlitePool) -> u64 {
+    let default_ttl: u64 = match get_setting_by_key(&pool, "response_cache_default_ttl") {
+        Ok(Some(row)) => {
+            let value_str: String = row.get("value");
+            value_str.parse().unwrap_or_else(|e| {
+                warn!("Failed to parse response_cache_default_ttl setting '{}': {}, using default", value_str, e);
+                crate::cache::DEFAULT_RESPONSE_CACHE_TTL
+            })
+        }
+        Ok(None) => {
+            info!("No response_cache_default_ttl setting found, using default: {}", crate::cache::DEFAULT_RESPONSE_CACHE_TTL);
+            crate::cache::DEFAULT_RESPONSE_CACHE_TTL
+        }
+        Err(e) => {
+            warn!("Failed to fetch response_cache_default_ttl setting, using default: {}", e);
+            crate::cache::DEFAULT_RESPONSE_CACHE_TTL
+        }
+    };
+    default_ttl
 }

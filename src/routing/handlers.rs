@@ -64,9 +64,15 @@
 use axum::{extract::OriginalUri, http::{HeaderMap, Method}};
 use sqlx::Row;
 use tokio::time::Instant;
-use tracing::{info, warn, error};
+use tracing::{info, warn, error, debug};
 use crate::{
-    auth::{apply_authentication, types::AuthType}, database::queries, health::HealthStatus, metrics::{store_metrics_async, RequestMetrics}, rate_limiter::check_rate_limit, AppState
+    auth::{apply_authentication, types::AuthType},
+    cache::{CachedResponse, UpstreamResponseCacheKey},
+    database::queries, 
+    health::HealthStatus, 
+    metrics::{store_metrics_async, RequestMetrics}, 
+    rate_limiter::check_rate_limit, 
+    AppState,
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -231,6 +237,38 @@ pub async fn handle_request_core(
         request_size_bytes = request_size,
         "Incoming request"
     );
+
+    // Generate cache key from request
+    let cache_key = UpstreamResponseCacheKey::new(
+        &path,
+        method.as_str(),
+        None, // TODO: Parse query params if needed
+        body.as_ref().map(|b| b.as_bytes())
+    );
+
+    info!("cache key: {}", cache_key);
+
+    // Check cache for existing response
+    if let Some(cached) = state.response_cache.get(&cache_key).await {
+        info!(
+            request_id = %metrics.id,
+            path = %path,
+            "Serving response from cache"
+        );
+        
+        // Update metrics for cache hit
+        metrics.cache_hit = true;
+        store_metrics_async(state.db.clone(), metrics);
+        
+        // Convert cached response back to axum response
+        return convert_cached_response(cached);
+    } else {
+        info!(
+            request_id = %metrics.id,
+            path = %path,
+            "Cache miss"
+        );
+    }
 
     // Get route configuration from cache or database
     let route_config = match get_cached_route_config(&state, &path).await {
@@ -497,7 +535,7 @@ pub async fn handle_request_core(
     );
 
     // Use the pooled HTTP client
-    let builder = state.http_client.request(method, &auth_route_config.upstream);
+    let builder = state.http_client.request(method.clone(), &auth_route_config.upstream);
 
     // Apply authentication
     let builder = match apply_authentication(
@@ -556,8 +594,8 @@ pub async fn handle_request_core(
     };
 
     let upstream_duration = upstream_start.elapsed();
-    let response_status = response.status();
-
+    let response_status = response.status();    
+    let response_headers = response.headers().clone();
     let response_body = match response.text().await {
         Ok(body) => body,
         Err(e) => {
@@ -599,6 +637,34 @@ pub async fn handle_request_core(
     // Store metrics in database asynchronously (non-blocking)
     store_metrics_async(state.db.clone(), metrics);
 
+    // Cache successful responses (2xx status codes)
+    if response_status.is_success() {
+        info!("Caching response for {} {}", method, path);
+        
+        let response_body_bytes = response_body.as_bytes().to_vec();
+        
+        // Spawn a task to cache the response asynchronously
+        let cache = state.response_cache.clone();
+        let cache_key = cache_key.clone();
+        
+        tokio::spawn(async move {
+            // Only cache if the response is not too large (e.g., < 10MB)
+            const MAX_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10MB
+            if response_body_bytes.len() < MAX_CACHE_SIZE {
+                cache.set(
+                    cache_key,
+                    response_status,
+                    response_headers,
+                    response_body_bytes,
+                ).await;
+                info!("Response cached for {} {}", method, path);
+            } else {
+                warn!("Response too large to cache ({} bytes)", response_body_bytes.len());
+            }
+        });
+    }
+
+    // Return the response to the client
     axum::response::Response::builder()
         .status(response_status)
         .body(response_body.into())
@@ -701,6 +767,29 @@ fn is_method_allowed(method: &Method, allowed_methods: &str) -> bool {
     
     let allowed_methods: Vec<&str> = allowed_methods.split(',').collect();
     allowed_methods.contains(&method.as_str())
+}
+
+/// Convert a CachedResponse back to an Axum response
+fn convert_cached_response(cached: CachedResponse) -> axum::response::Response {
+    let mut response = axum::response::Response::builder()
+        .status(cached.status);
+    
+    // Add all headers from the cached response
+    let response_headers = response.headers_mut().unwrap();
+    for (key, value) in cached.headers.iter() {
+        if let Ok(value_str) = value.to_str() {
+            if let Ok(header_value) = axum::http::HeaderValue::from_str(value_str) {
+                response_headers.insert(key, header_value);
+            }
+        }
+    }
+    
+    // Add cache hit header
+    response_headers.insert("X-Cache", "HIT".parse().unwrap());
+    
+    // Set the response body
+    response.body(axum::body::Body::from(cached.body))
+        .unwrap()
 }
 
 ///////////////////////////////////////////////////////////////////////////////

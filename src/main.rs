@@ -24,6 +24,7 @@ mod server;
 mod database;
 mod health;
 mod open_api;
+mod cache;
 
 #[cfg(test)]
 mod tests;
@@ -31,7 +32,7 @@ use sqlx::sqlite::SqlitePool;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use tokio::sync::RwLock;
-use tracing::info;
+use tracing::{info};
 use auth::{
     oauth::OAuthTokenCache,
     types::AuthType,
@@ -41,6 +42,7 @@ use metrics::RequestMetrics;
 use database::{initialize_database, get_database_url};
 use routing::handlers::RouteConfig;
 use health::HealthChecker;
+use crate::cache::ResponseCache;
 
 /// Application state shared across routes, contains DB pool and token cache
 #[derive(Clone)]
@@ -51,6 +53,7 @@ struct AppState {
     route_cache: Arc<RwLock<HashMap<String, RouteConfig>>>,
     http_client: reqwest::Client,
     health_checker: Arc<HealthChecker>,
+    response_cache: Arc<ResponseCache>,
 }
 
 #[tokio::main]

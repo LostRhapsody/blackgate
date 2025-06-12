@@ -272,7 +272,20 @@ impl DatabaseManager {
                     INSERT INTO settings (key, value, description) VALUES
                         ('backup_enabled', 'false', 'Enable automated database backups to S3'),
                         ('backup_interval_hours', '24', 'Hours between automated backup runs'),
-                        ('backup_retention_days', '30', 'Days to keep backup files in S3');
+                        ('backup_retention_days', '30', 'Days to keep backup files in S3');                    
+                "#.to_string(),
+            },
+            Migration {
+                version: 4,
+                name: "response_cache_default_ttl".to_string(),
+                sql: r#"
+                    -- Default response cache settings
+                    INSERT INTO settings (key, value, description)
+                    VALUES ('response_cache_default_ttl', '15', 'Default TTL in seconds for response cache entries')
+                    ON CONFLICT(key) DO UPDATE SET 
+                        value = EXCLUDED.value,
+                        description = EXCLUDED.description,
+                        updated_at = CURRENT_TIMESTAMP;
                 "#.to_string(),
             },
         ]

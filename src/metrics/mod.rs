@@ -56,6 +56,7 @@ use crate::{auth::types::AuthType, database::queries};
 ///////////////////////////////////////////////////////////////////////////////
 
 /// Metrics data structure for tracking request/response information
+/// TODO upadte metric's cache hit logic
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RequestMetrics {
     pub id: String,
@@ -71,6 +72,7 @@ pub struct RequestMetrics {
     pub auth_type: String,
     pub client_ip: Option<String>,
     pub user_agent: Option<String>,
+    pub cache_hit: bool,
     pub error_message: Option<String>,
 }
 
@@ -90,6 +92,7 @@ impl RequestMetrics {
             auth_type: AuthType::None.to_string().to_string(),
             client_ip: None,
             user_agent: None,
+            cache_hit: false,
             error_message: None,
         }
     }

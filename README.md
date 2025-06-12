@@ -33,6 +33,93 @@ Current Progress: 65%
 
 I'm a solo-developer building Black Gate. Contact me via `evan.robertson77@gmail.com` for questions about Black Gate, it's features, or contributing.
 
+# Deployment
+
+## Production Deployment with Docker Compose
+
+Black Gate includes a production-ready Docker Compose configuration that supports configurable resource limits.
+
+### Quick Start
+
+1. Copy the environment configuration template:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Edit the `.env` file to customize resource limits and other settings:
+   ```bash
+   # CPU and Memory Limits
+   BLACKGATE_CPU_LIMIT=1.0
+   BLACKGATE_MEMORY_LIMIT=1G
+   BLACKGATE_CPU_RESERVATION=0.5
+   BLACKGATE_MEMORY_RESERVATION=512M
+   ```
+
+3. Deploy with Docker Compose:
+   ```bash
+   docker compose -f docker-compose.production.yml up -d
+   ```
+
+### Deployment Scripts
+
+For easier deployment, you can use the provided deployment scripts:
+
+**Bash:**
+```bash
+# Deploy with defaults
+./deploy.sh
+
+# Deploy with custom resources
+./deploy.sh -c 2.0 -m 2G
+
+# Deploy with minimal resources
+./deploy.sh --cpu-limit 0.5 --memory-limit 512M
+```
+
+### Resource Configuration
+
+You can configure CPU and memory limits in several ways:
+
+**Option 1: Environment File (.env)**
+```bash
+BLACKGATE_CPU_LIMIT=2.0
+BLACKGATE_MEMORY_LIMIT=2G
+BLACKGATE_CPU_RESERVATION=1.0
+BLACKGATE_MEMORY_RESERVATION=1G
+```
+
+**Option 2: Environment Variables**
+```bash
+export BLACKGATE_CPU_LIMIT=2.0
+export BLACKGATE_MEMORY_LIMIT=2G
+docker compose -f docker-compose.production.yml up -d
+```
+
+**Option 3: Inline with Docker Compose**
+```bash
+BLACKGATE_CPU_LIMIT=2.0 BLACKGATE_MEMORY_LIMIT=2G docker compose -f docker-compose.production.yml up -d
+```
+
+### Default Resource Limits
+
+- **CPU Limit**: 1.0 (1 full CPU core)
+- **Memory Limit**: 1G (1 gigabyte)
+- **CPU Reservation**: 0.5 (guaranteed minimum: half a CPU core)
+- **Memory Reservation**: 512M (guaranteed minimum: 512 megabytes)
+
+### Recommended Resource Allocations
+
+Based on load testing goals:
+
+- **Light Load (< 1,000 req/s)**: 0.5 CPU, 512MB memory
+- **Medium Load (1,000-3,000 req/s)**: 1.0 CPU, 1GB memory  
+- **Heavy Load (3,000-6,000 req/s)**: 2.0 CPU, 2GB memory
+- **Very Heavy Load (> 6,000 req/s)**: 4.0 CPU, 4GB+ memory
+
+### Health Checks
+
+The production deployment includes built-in health checks that verify the service is running correctly. The health check endpoint is available at `http://localhost:3000/health`.
+
 # Upcoming features
 
 **Response Caching**
@@ -49,7 +136,7 @@ Currently, no backup solution exists. Currently debating these options, one or a
 **Production Docker Improvements**
 
 After a brief review, there are a few things we could do to improve the production-readiness of Black Gate. Despite these, the system is currently considered production ready, and these are mostly operational concerns, not show-stoppers.
-- Configurable CPU/Memory limits
+- ✅ Configurable CPU/Memory limits
 - Integration with a secret management service like Docker secrets
 - Basic graceful shutdown script
 - Validate required env variables on startup, all have defaults so not a huge concern

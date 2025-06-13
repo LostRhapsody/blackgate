@@ -46,9 +46,20 @@ pub fn build_health_check_view(health_checks: &[sqlx::sqlite::SqliteRow]) -> Str
     }
 
     let total_routes = health_checks.len();
-    // let overall_status = if unhealthy_count > 0 { "Unhealthy" }
-    //                     else if unknown_count == total_routes { "Unknown" }
-    //                     else { "Healthy" };
+
+    // if we have no unhealthy or unknown routes, status is healthy.
+    // if we have more health routes than unhealthy or unknown, status is "ok"
+    // if we have ALL unknown routes, status is "unknown"
+    // otherwise, status is unhealthy.
+    let overall_status = if healthy_count == total_routes {
+        "Healthy"
+    } else if healthy_count > unhealthy_count + unknown_count {
+        "Degraded"
+    } else if unknown_count == total_routes {
+        "Unknown"
+    } else {
+        "Unhealthy"
+    };
 
     // Generate health check rows HTML
     let health_rows: String = health_checks
@@ -176,6 +187,7 @@ pub fn build_health_check_view(health_checks: &[sqlx::sqlite::SqliteRow]) -> Str
     </div>
 </body>
 </html>"#,
+        // unknown and degraded are both yellow
         match overall_status {
             "Healthy" => "health-green",
             "Unhealthy" => "health-red",

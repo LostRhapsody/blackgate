@@ -11,4 +11,17 @@ echo "🗄️ Status of database migrations..."
 
 # Start the server
 echo "🚀 Starting Black Gate server..."
-exec /usr/local/bin/blackgate start
+
+# Create PID file for graceful shutdown support
+PID_FILE="/tmp/blackgate.pid"
+
+# Start the server and capture PID
+/usr/local/bin/blackgate start &
+BLACKGATE_PID=$!
+
+# Save PID to file for graceful shutdown scripts
+echo $BLACKGATE_PID > "$PID_FILE"
+echo "📝 PID $BLACKGATE_PID saved to $PID_FILE"
+
+# Wait for the process to complete
+wait $BLACKGATE_PID

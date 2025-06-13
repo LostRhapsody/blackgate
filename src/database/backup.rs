@@ -31,19 +31,18 @@
 //! - `s3_secret_key`: S3 secret access key
 //! - `s3_endpoint`: Custom S3 endpoint (optional, for S3-compatible services)
 
-use sqlx::{SqlitePool, Row};
-use std::sync::Arc;
-use std::time::Duration;
-use tracing::{info, warn, error, debug};
-use chrono::{Utc, DateTime};
 use crate::database::queries;
-use std::path::{Path, PathBuf};
-use std::io::Write;
+use chrono::{DateTime, Utc};
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use s3::Bucket;
-use s3::creds::Credentials;
 use s3::Region;
+use s3::creds::Credentials;
+use sqlx::{Row, SqlitePool};
+use std::io::Write;
+use std::sync::Arc;
+use std::time::Duration;
+use tracing::{debug, error, info, warn};
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Public Structs                            ****//
@@ -55,7 +54,6 @@ pub enum BackupStatus {
     Success,
     Failed,
     InProgress,
-    Disabled,
 }
 
 impl BackupStatus {
@@ -64,7 +62,6 @@ impl BackupStatus {
             BackupStatus::Success => "Success".to_string(),
             BackupStatus::Failed => "Failed".to_string(),
             BackupStatus::InProgress => "InProgress".to_string(),
-            BackupStatus::Disabled => "Disabled".to_string(),
         }
     }
 }
@@ -103,7 +100,6 @@ pub struct BackupResult {
 #[derive(Clone)]
 pub struct BackupManager {
     db_pool: Arc<SqlitePool>,
-    db_path: PathBuf,
 }
 
 /// Default backup interval in hours
@@ -119,11 +115,8 @@ const BACKUP_FILE_PREFIX: &str = "blackgate-backup";
 
 impl BackupManager {
     /// Create a new backup manager instance
-    pub fn new(db_pool: Arc<SqlitePool>, db_path: impl AsRef<Path>) -> Self {
-        Self {
-            db_pool,
-            db_path: db_path.as_ref().to_path_buf(),
-        }
+    pub fn new(db_pool: Arc<SqlitePool>) -> Self {
+        Self { db_pool }
     }
 
     /// Start the backup background task
@@ -152,7 +145,10 @@ impl BackupManager {
                     continue;
                 }
 
-                debug!("Running database backup check with {} hour intervals", config.interval_hours);
+                debug!(
+                    "Running database backup check with {} hour intervals",
+                    config.interval_hours
+                );
 
                 if let Err(e) = manager.run_backup(&config).await {
                     error!("Database backup cycle failed: {}", e);
@@ -166,7 +162,10 @@ impl BackupManager {
     }
 
     /// Run a single backup operation
-    pub async fn run_backup(&self, config: &BackupConfig) -> Result<BackupResult, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn run_backup(
+        &self,
+        config: &BackupConfig,
+    ) -> Result<BackupResult, Box<dyn std::error::Error + Send + Sync>> {
         let mut result = BackupResult {
             status: BackupStatus::InProgress,
             started_at: Utc::now(),
@@ -197,7 +196,7 @@ impl BackupManager {
                 result.file_size_bytes = Some(file_size);
                 result.s3_key = Some(s3_key);
                 result.completed_at = Some(Utc::now());
-                
+
                 info!(
                     "Database backup completed successfully: {} bytes uploaded to S3 key '{}'",
                     file_size,
@@ -205,7 +204,10 @@ impl BackupManager {
                 );
 
                 // Clean up old backups
-                if let Err(e) = self.cleanup_old_backups(s3_config, config.retention_days).await {
+                if let Err(e) = self
+                    .cleanup_old_backups(s3_config, config.retention_days)
+                    .await
+                {
                     warn!("Failed to cleanup old backups: {}", e);
                 }
             }
@@ -226,7 +228,10 @@ impl BackupManager {
     }
 
     /// Perform the actual backup operation
-    async fn perform_backup(&self, s3_config: &S3Config) -> Result<(u64, String), Box<dyn std::error::Error + Send + Sync>> {
+    async fn perform_backup(
+        &self,
+        s3_config: &S3Config,
+    ) -> Result<(u64, String), Box<dyn std::error::Error + Send + Sync>> {
         // Generate backup filename with timestamp
         let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
         let backup_filename = format!("{}-{}.db.gz", BACKUP_FILE_PREFIX, timestamp);
@@ -253,7 +258,7 @@ impl BackupManager {
         debug!("Uploading backup to S3");
         let bucket = self.create_s3_bucket(s3_config)?;
         let s3_key = format!("backups/{}", backup_filename);
-        
+
         bucket.put_object(&s3_key, &compressed_data).await?;
 
         // Step 4: Cleanup temporary files
@@ -265,7 +270,10 @@ impl BackupManager {
     }
 
     /// Create S3 bucket connection
-    fn create_s3_bucket(&self, config: &S3Config) -> Result<Bucket, Box<dyn std::error::Error + Send + Sync>> {
+    fn create_s3_bucket(
+        &self,
+        config: &S3Config,
+    ) -> Result<Bucket, Box<dyn std::error::Error + Send + Sync>> {
         let region = if let Some(endpoint) = &config.endpoint {
             Region::Custom {
                 region: config.region.clone(),
@@ -288,7 +296,11 @@ impl BackupManager {
     }
 
     /// Cleanup old backups based on retention policy
-    async fn cleanup_old_backups(&self, s3_config: &S3Config, retention_days: u64) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn cleanup_old_backups(
+        &self,
+        s3_config: &S3Config,
+        retention_days: u64,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let bucket = self.create_s3_bucket(s3_config)?;
         let cutoff_date = Utc::now() - chrono::Duration::days(retention_days as i64);
 
@@ -301,7 +313,9 @@ impl BackupManager {
             for object in object_list.contents {
                 // Parse timestamp from filename and check if it's older than retention period
                 if let Some(timestamp_str) = self.extract_timestamp_from_key(&object.key) {
-                    if let Ok(object_date) = DateTime::parse_from_str(&timestamp_str, "%Y%m%d_%H%M%S") {
+                    if let Ok(object_date) =
+                        DateTime::parse_from_str(&timestamp_str, "%Y%m%d_%H%M%S")
+                    {
                         if object_date.with_timezone(&Utc) < cutoff_date {
                             debug!("Deleting old backup: {}", object.key);
                             if let Err(e) = bucket.delete_object(&object.key).await {
@@ -320,7 +334,8 @@ impl BackupManager {
     fn extract_timestamp_from_key(&self, key: &str) -> Option<String> {
         // Extract timestamp from key like "backups/blackgate-backup-20231215_143022.db.gz"
         if let Some(filename) = key.split('/').last() {
-            if let Some(timestamp_part) = filename.strip_prefix(&format!("{}-", BACKUP_FILE_PREFIX)) {
+            if let Some(timestamp_part) = filename.strip_prefix(&format!("{}-", BACKUP_FILE_PREFIX))
+            {
                 if let Some(timestamp) = timestamp_part.strip_suffix(".db.gz") {
                     return Some(timestamp.to_string());
                 }
@@ -330,7 +345,9 @@ impl BackupManager {
     }
 
     /// Load backup configuration from database settings
-    async fn load_backup_config(&self) -> Result<BackupConfig, Box<dyn std::error::Error + Send + Sync>> {
+    async fn load_backup_config(
+        &self,
+    ) -> Result<BackupConfig, Box<dyn std::error::Error + Send + Sync>> {
         // Helper function to get setting value
         let get_setting = |key: &str| -> Result<Option<String>, sqlx::Error> {
             match queries::get_setting_by_key(&self.db_pool, key) {
@@ -361,8 +378,9 @@ impl BackupManager {
             let secret_key = get_setting("s3_secret_key")?;
             let endpoint = get_setting("s3_endpoint")?;
 
-            if let (Some(bucket), Some(region), Some(access_key), Some(secret_key)) = 
-                (bucket, region, access_key, secret_key) {
+            if let (Some(bucket), Some(region), Some(access_key), Some(secret_key)) =
+                (bucket, region, access_key, secret_key)
+            {
                 Some(S3Config {
                     bucket,
                     region,
@@ -391,7 +409,7 @@ impl BackupManager {
         sqlx::query(
             "INSERT INTO backup_history
              (status, started_at, completed_at, file_size_bytes, s3_key, error_message)
-             VALUES (?, ?, ?, ?, ?, ?)"
+             VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(result.status.to_string())
         .bind(result.started_at.to_rfc3339())
@@ -406,9 +424,12 @@ impl BackupManager {
     }
 
     /// Run a manual backup (for CLI or admin interface)
-    pub async fn run_manual_backup(&self) -> Result<BackupResult, Box<dyn std::error::Error + Send + Sync>> {
+    #[allow(dead_code)]
+    pub async fn run_manual_backup(
+        &self,
+    ) -> Result<BackupResult, Box<dyn std::error::Error + Send + Sync>> {
         let config = self.load_backup_config().await?;
-        
+
         if config.s3_config.is_none() {
             return Err("S3 configuration not available for manual backup".into());
         }
@@ -417,12 +438,13 @@ impl BackupManager {
     }
 
     /// Get recent backup history
+    #[allow(dead_code)]
     pub async fn get_backup_history(&self, limit: i32) -> Result<Vec<BackupResult>, sqlx::Error> {
         let rows = sqlx::query(
             "SELECT status, started_at, completed_at, file_size_bytes, s3_key, error_message
-             FROM backup_history 
-             ORDER BY started_at DESC 
-             LIMIT ?"
+             FROM backup_history
+             ORDER BY started_at DESC
+             LIMIT ?",
         )
         .bind(limit)
         .fetch_all(self.db_pool.as_ref())
@@ -441,7 +463,8 @@ impl BackupManager {
                 .map_err(|e| sqlx::Error::Decode(Box::new(e)))?
                 .with_timezone(&Utc);
 
-            let completed_at = row.get::<Option<String>, _>("completed_at")
+            let completed_at = row
+                .get::<Option<String>, _>("completed_at")
                 .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
                 .map(|dt| dt.with_timezone(&Utc));
 
@@ -449,7 +472,9 @@ impl BackupManager {
                 status,
                 started_at,
                 completed_at,
-                file_size_bytes: row.get::<Option<i64>, _>("file_size_bytes").map(|s| s as u64),
+                file_size_bytes: row
+                    .get::<Option<i64>, _>("file_size_bytes")
+                    .map(|s| s as u64),
                 s3_key: row.get("s3_key"),
                 error_message: row.get("error_message"),
             });
@@ -481,30 +506,19 @@ mod tests {
         assert_eq!(BackupStatus::Success.to_string(), "Success");
         assert_eq!(BackupStatus::Failed.to_string(), "Failed");
         assert_eq!(BackupStatus::InProgress.to_string(), "InProgress");
-        assert_eq!(BackupStatus::Disabled.to_string(), "Disabled");
-    }
-
-    #[tokio::test]
-    async fn test_backup_manager_creation() {
-        let pool = create_test_db().await;
-        let manager = BackupManager::new(Arc::new(pool), "test.db");
-        assert_eq!(manager.db_path, PathBuf::from("test.db"));
     }
 
     #[tokio::test]
     async fn test_timestamp_extraction() {
         let pool = create_test_db().await;
-        let manager = BackupManager::new(Arc::new(pool), "test.db");
-        
+        let manager = BackupManager::new(Arc::new(pool));
+
         assert_eq!(
             manager.extract_timestamp_from_key("backups/blackgate-backup-20231215_143022.db.gz"),
             Some("20231215_143022".to_string())
         );
-        
-        assert_eq!(
-            manager.extract_timestamp_from_key("invalid/path"),
-            None
-        );
+
+        assert_eq!(manager.extract_timestamp_from_key("invalid/path"), None);
     }
 
     // Note: More comprehensive tests would require S3 credentials and would be implemented as integration tests

@@ -31,22 +31,19 @@
 //! start_oauth_test_server(pool, 8080).await;
 //! ```
 
-use sqlx::{sqlite::SqlitePool, Row};
-use tracing::{info, error, warn};
-use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
-use tokio::sync::RwLock;
 use crate::AppState;
 use crate::auth::oauth::OAuthTokenCache;
+use crate::cache::ResponseCache;
+use crate::database::backup::BackupManager;
+use crate::database::queries::get_setting_by_key;
+use crate::health::HealthChecker;
 use crate::rate_limiter::RateLimiter;
 use crate::routing::router::create_router;
-use crate::health::HealthChecker;
-use crate::database::{
-    get_database_url,
-    backup::BackupManager,
-};
-use crate::database::queries::get_setting_by_key;
-use crate::cache::ResponseCache;
+use sqlx::{Row, sqlite::SqlitePool};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use tokio::sync::RwLock;
+use tracing::{error, info, warn};
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                       Public Functions                            ****//
@@ -58,7 +55,7 @@ pub async fn start_server(pool: SqlitePool) {
     let rate_limiter = Arc::new(Mutex::new(RateLimiter::new()));
     let route_cache = Arc::new(RwLock::new(HashMap::new()));
     let http_client = reqwest::Client::new();
-    
+
     // Create shared health checker
     let health_checker = Arc::new(HealthChecker::new(Arc::new(pool.clone())));
 
@@ -82,12 +79,10 @@ pub async fn start_server(pool: SqlitePool) {
     let background_health_checker = HealthChecker::new(Arc::new(pool.clone()));
     background_health_checker.start_background_checks();
 
-    let database_url = get_database_url();
-    
     // Start the database backup background service
-    let backup_manager = BackupManager::new(Arc::new(pool.clone()), database_url);
+    let backup_manager = BackupManager::new(Arc::new(pool.clone()));
     backup_manager.start_background_backups();
-    
+
     // Create a new response cache for the background service
     let background_response_cache = Arc::new(ResponseCache::new(default_ttl));
 
@@ -116,14 +111,14 @@ pub async fn start_server_with_shutdown(
     let rate_limiter = Arc::new(Mutex::new(RateLimiter::new()));
     let route_cache = Arc::new(RwLock::new(HashMap::new()));
     let http_client = reqwest::Client::new();
-    
+
     // Create shared health checker
     let health_checker = Arc::new(HealthChecker::new(Arc::new(pool.clone())));
 
     // Create a shared response cache
     let default_ttl: u64 = get_response_cache_default_ttl(&pool);
     let response_cache = Arc::new(ResponseCache::new(default_ttl));
-    
+
     let app_state = AppState {
         db: pool.clone(),
         token_cache,
@@ -141,14 +136,14 @@ pub async fn start_server_with_shutdown(
     background_health_checker.start_background_checks();
 
     // Start the database backup background service
-    let backup_manager = BackupManager::new(Arc::new(pool.clone()), "blackgate.db");
+    let backup_manager = BackupManager::new(Arc::new(pool.clone()));
     backup_manager.start_background_backups();
 
     // Start the response cache background service
     // TODO move the tokio spawn into the response cache new function
     // Create a new response cache for the background service
     let background_response_cache = Arc::new(ResponseCache::new(default_ttl));
-    
+
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60)); // Run every minute
         loop {
@@ -211,16 +206,25 @@ fn get_response_cache_default_ttl(pool: &SqlitePool) -> u64 {
         Ok(Some(row)) => {
             let value_str: String = row.get("value");
             value_str.parse().unwrap_or_else(|e| {
-                warn!("Failed to parse response_cache_default_ttl setting '{}': {}, using default", value_str, e);
+                warn!(
+                    "Failed to parse response_cache_default_ttl setting '{}': {}, using default",
+                    value_str, e
+                );
                 crate::cache::DEFAULT_RESPONSE_CACHE_TTL
             })
         }
         Ok(None) => {
-            info!("No response_cache_default_ttl setting found, using default: {}", crate::cache::DEFAULT_RESPONSE_CACHE_TTL);
+            info!(
+                "No response_cache_default_ttl setting found, using default: {}",
+                crate::cache::DEFAULT_RESPONSE_CACHE_TTL
+            );
             crate::cache::DEFAULT_RESPONSE_CACHE_TTL
         }
         Err(e) => {
-            warn!("Failed to fetch response_cache_default_ttl setting, using default: {}", e);
+            warn!(
+                "Failed to fetch response_cache_default_ttl setting, using default: {}",
+                e
+            );
             crate::cache::DEFAULT_RESPONSE_CACHE_TTL
         }
     };

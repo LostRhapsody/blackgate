@@ -1,10 +1,10 @@
 use axum::http::{HeaderMap, StatusCode};
 use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
+use std::fmt::Display;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::fmt::Display;
 use tokio::sync::RwLock;
 
 pub const DEFAULT_RESPONSE_CACHE_TTL: u64 = 15;
@@ -124,12 +124,6 @@ impl ResponseCache {
         let mut cache = self.cache.write().await;
         cache.retain(|_, v| now < v.cached_at + self.default_ttl);
     }
-
-    /// Clear all cache entries
-    pub async fn clear(&self) {
-        let mut cache = self.cache.write().await;
-        cache.clear();
-    }
 }
 
 #[cfg(test)]
@@ -232,7 +226,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_key_different_methods() {
-        let cache = ResponseCache::new(DEFAULT_RESPONSE_CACHE_TTL);
         let key1 = UpstreamResponseCacheKey::new("/test", "GET", None, None);
         let key2 = UpstreamResponseCacheKey::new("/test", "POST", None, None);
 
@@ -242,7 +235,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_key_different_bodies() {
-        let cache = ResponseCache::new(DEFAULT_RESPONSE_CACHE_TTL);
         let key1 = UpstreamResponseCacheKey::new("/test", "POST", None, Some(b"body1"));
         let key2 = UpstreamResponseCacheKey::new("/test", "POST", None, Some(b"body2"));
 
@@ -252,7 +244,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_key_different_queries() {
-        let cache = ResponseCache::new(DEFAULT_RESPONSE_CACHE_TTL);
         let key1 = UpstreamResponseCacheKey::new("/test", "GET", Some("a=1"), None);
         let key2 = UpstreamResponseCacheKey::new("/test", "GET", Some("b=2"), None);
 

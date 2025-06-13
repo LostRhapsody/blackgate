@@ -1,38 +1,38 @@
 //! # Metrics Module
-//! 
+//!
 //! This module provides a struct for tracking and recording
 //! request/response metrics in the blackgate application. It captures detailed
 //! information about HTTP requests including timing, sizes, authentication,
 //! and error handling.
-//! 
+//!
 //! ## Features
-//! 
+//!
 //! - **Request Tracking**: Records comprehensive metadata for each HTTP request
 //! - **Performance Metrics**: Captures request duration and payload sizes
 //! - **Authentication Logging**: Tracks the authentication method used
 //! - **Error Handling**: Records error messages when requests fail
 //! - **Upstream Integration**: Logs upstream service URLs when proxying requests
-//! 
+//!
 //! ## Usage
-//! 
+//!
 //! The primary structure `RequestMetrics` is designed to be created at the start
 //! of a request and updated as the request progresses through the system.
-//! 
+//!
 //! ```rust
 //! use crate::metrics::RequestMetrics;
-//! 
+//!
 //! // Create metrics for a new request
 //! let mut metrics = RequestMetrics::new("/api/users".to_string(), "GET".to_string(), 0);
-//! 
+//!
 //! // Complete the request with response data
 //! metrics.complete_request(1024, 200, Some("http://backend".to_string()), "ApiKey".to_string());
-//! 
+//!
 //! // Or record an error
 //! metrics.set_error("Connection timeout".to_string());
 //! ```
-//! 
+//!
 //! ## Data Structure
-//! 
+//!
 //! The `RequestMetrics` struct includes:
 //! - Unique request identifier
 //! - HTTP method and path
@@ -44,12 +44,12 @@
 //! - Upstream service URL (for proxied requests)
 //! - Error messages (when applicable)
 
-use serde::{Deserialize, Serialize};
+use crate::{auth::types::AuthType, database::queries};
 use chrono::{DateTime, Utc};
-use uuid::Uuid;
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tracing::{debug, error};
-use crate::{auth::types::AuthType, database::queries};
+use uuid::Uuid;
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Public Structs                            ****//
@@ -125,37 +125,8 @@ impl RequestMetrics {
 //****                       Public Functions                            ****//
 ///////////////////////////////////////////////////////////////////////////////
 
-/// Store request metrics in the database
-pub async fn store_metrics(pool: &SqlitePool, metrics: &RequestMetrics) {
-    let response_timestamp_str = metrics.response_timestamp.map(|t| t.to_rfc3339());
-    let result = queries::store_request_metrics(
-        pool,
-        &metrics.id,
-        &metrics.path,
-        &metrics.method,
-        &metrics.request_timestamp.to_rfc3339(),
-        response_timestamp_str.as_deref(),
-        metrics.duration_ms,
-        metrics.request_size_bytes,
-        metrics.response_size_bytes,
-        metrics.response_status_code,
-        &metrics.upstream_url.as_deref().unwrap_or(""),
-        &metrics.auth_type,
-        &metrics.client_ip.as_deref().unwrap_or(""),
-        &metrics.user_agent.as_deref().unwrap_or(""),
-        metrics.error_message.as_deref(),
-    )
-    .await;
-
-    if let Err(e) = result {
-        error!("Failed to store metrics: {}", e);
-    } else {
-        debug!("Stored metrics for request {}", metrics.id);
-    }
-}
-
 /// Store request metrics in the database asynchronously without blocking the request
-pub fn store_metrics_async(pool: SqlitePool, metrics: RequestMetrics) {
+pub fn store_metrics(pool: SqlitePool, metrics: RequestMetrics) {
     tokio::spawn(async move {
         let response_timestamp_str = metrics.response_timestamp.map(|t| t.to_rfc3339());
         let result = queries::store_request_metrics(
@@ -202,7 +173,12 @@ mod tests {
         assert_eq!(metrics.request_size_bytes, 100);
         assert!(metrics.request_timestamp <= Utc::now());
 
-        metrics.complete_request(200, 200, Some("http://upstream".to_string()), AuthType::ApiKey.to_string().to_string());
+        metrics.complete_request(
+            200,
+            200,
+            Some("http://upstream".to_string()),
+            AuthType::ApiKey.to_string().to_string(),
+        );
         assert!(metrics.response_timestamp.is_some());
         assert!(metrics.duration_ms.is_some());
         assert_eq!(metrics.response_size_bytes.unwrap(), 200);

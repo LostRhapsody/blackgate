@@ -10,9 +10,12 @@
 //! - **Metrics Queries**: Fetch request metrics and statistics
 //! - **General Queries**: Utility queries for counts and other operations
 
-use sqlx::{sqlite::SqlitePool, Row};
+use crate::{
+    auth::types::AuthType,
+    health::{HealthCheckMethod, HealthStatus},
+};
+use sqlx::{Row, sqlite::SqlitePool};
 use tracing::info;
-use crate::{auth::types::AuthType, health::{HealthCheckMethod, HealthStatus}};
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Route Queries                             ****//
@@ -197,9 +200,7 @@ pub async fn update_route_by_path(
 }
 
 /// Get count of all configured routes
-pub async fn count_routes(
-    pool: &SqlitePool,
-) -> Result<i64, sqlx::Error> {
+pub async fn count_routes(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
     let row = sqlx::query("SELECT COUNT(*) as count FROM routes")
         .fetch_one(pool)
         .await?;
@@ -257,7 +258,7 @@ pub async fn fetch_recent_request_metrics(
             request_size_bytes, response_size_bytes, upstream_url, auth_type, error_message
      FROM request_metrics
      ORDER BY request_timestamp DESC
-     LIMIT ?"
+     LIMIT ?",
     )
     .bind(limit)
     .fetch_all(pool)
@@ -273,7 +274,7 @@ pub async fn fetch_recent_requests_for_dashboard(
         "SELECT path, method, request_timestamp, duration_ms, response_status_code
          FROM request_metrics
          ORDER BY request_timestamp DESC
-         LIMIT ?"
+         LIMIT ?",
     )
     .bind(limit)
     .fetch_all(pool)
@@ -284,44 +285,34 @@ pub async fn fetch_recent_requests_for_dashboard(
 //****                      Routing Queries                              ****//
 ///////////////////////////////////////////////////////////////////////////////
 
-/// Fetch route configuration by path for request routing
-pub async fn fetch_route_config_by_path(
-    pool: &SqlitePool,
-    path: &str,
-) -> Result<Option<sqlx::sqlite::SqliteRow>, sqlx::Error> {
-    sqlx::query("SELECT upstream, backup_route_path, auth_type, auth_value, allowed_methods, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scope, jwt_secret, jwt_algorithm, jwt_issuer, jwt_audience, jwt_required_claims, oidc_issuer, oidc_client_id, oidc_client_secret, oidc_audience, oidc_scope, rate_limit_per_minute, rate_limit_per_hour FROM routes WHERE path = ?")
-        .bind(path)
-        .fetch_optional(pool)
-        .await
-}
-
 /// Fetch route configuration by path for request routing, including collection defaults
 pub async fn fetch_route_config_with_collection_by_path(
     pool: &SqlitePool,
     path: &str,
 ) -> Result<Option<sqlx::sqlite::SqliteRow>, sqlx::Error> {
-    sqlx::query("
-        SELECT 
-            r.upstream, 
-            r.backup_route_path, 
-            r.auth_type, 
-            r.auth_value, 
-            r.allowed_methods, 
-            r.oauth_token_url, 
-            r.oauth_client_id, 
-            r.oauth_client_secret, 
-            r.oauth_scope, 
-            r.jwt_secret, 
-            r.jwt_algorithm, 
-            r.jwt_issuer, 
-            r.jwt_audience, 
-            r.jwt_required_claims, 
-            r.oidc_issuer, 
-            r.oidc_client_id, 
-            r.oidc_client_secret, 
-            r.oidc_audience, 
-            r.oidc_scope, 
-            r.rate_limit_per_minute, 
+    sqlx::query(
+        "
+        SELECT
+            r.upstream,
+            r.backup_route_path,
+            r.auth_type,
+            r.auth_value,
+            r.allowed_methods,
+            r.oauth_token_url,
+            r.oauth_client_id,
+            r.oauth_client_secret,
+            r.oauth_scope,
+            r.jwt_secret,
+            r.jwt_algorithm,
+            r.jwt_issuer,
+            r.jwt_audience,
+            r.jwt_required_claims,
+            r.oidc_issuer,
+            r.oidc_client_id,
+            r.oidc_client_secret,
+            r.oidc_audience,
+            r.oidc_scope,
+            r.rate_limit_per_minute,
             r.rate_limit_per_hour,
             r.collection_id,
             c.default_auth_type,
@@ -340,12 +331,13 @@ pub async fn fetch_route_config_with_collection_by_path(
             c.default_oidc_client_secret,
             c.default_oidc_audience,
             c.default_oidc_scope
-        FROM routes r 
-        LEFT JOIN route_collections c ON r.collection_id = c.id 
-        WHERE r.path = ?")
-        .bind(path)
-        .fetch_optional(pool)
-        .await
+        FROM routes r
+        LEFT JOIN route_collections c ON r.collection_id = c.id
+        WHERE r.path = ?",
+    )
+    .bind(path)
+    .fetch_optional(pool)
+    .await
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -436,7 +428,9 @@ pub fn get_setting_by_key(
     })
 }
 
-pub async fn get_all_settings(pool: &SqlitePool) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
+pub async fn get_all_settings(
+    pool: &SqlitePool,
+) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
     sqlx::query("SELECT key, value, description, created_at, updated_at FROM settings ORDER BY key")
         .fetch_all(pool)
         .await
@@ -590,7 +584,7 @@ pub async fn insert_route_collection_with_id(
     .bind(default_rate_limit_per_hour)
     .execute(pool)
     .await?;
-    
+
     Ok(result.last_insert_rowid())
 }
 
@@ -671,7 +665,7 @@ pub async fn fetch_routes_by_collection(
     pool: &SqlitePool,
 ) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
     sqlx::query(
-        "SELECT 
+        "SELECT
             r.path, r.upstream, r.auth_type, r.rate_limit_per_minute, r.rate_limit_per_hour,
             r.collection_id,
             c.name as collection_name,
@@ -684,7 +678,7 @@ pub async fn fetch_routes_by_collection(
                     ROW_NUMBER() OVER (PARTITION BY path ORDER BY checked_at DESC) as rn
              FROM route_health_checks
          ) h ON r.path = h.path AND h.rn = 1
-         ORDER BY c.name, r.path"
+         ORDER BY c.name, r.path",
     )
     .fetch_all(pool)
     .await
@@ -705,7 +699,7 @@ pub async fn fetch_routes_in_collection(
              FROM route_health_checks
          ) h ON r.path = h.path AND h.rn = 1
          WHERE r.collection_id = ?
-         ORDER BY r.path"
+         ORDER BY r.path",
     )
     .bind(collection_id)
     .fetch_all(pool)
@@ -797,27 +791,27 @@ pub async fn insert_routes_from_openapi(
     for route in routes {
         // Convert auth_type string to AuthType enum
         let auth_type = AuthType::from_str(&route.auth_type);
-        
+
         // Use the existing insert_or_replace_route function
         // For OpenAPI routes, we'll use defaults for many fields
         insert_or_replace_route(
             pool,
             &route.path,
             &route.upstream, // upstream
-            "", // backup_route_path
+            "",              // backup_route_path
             Some(collection_id),
             &auth_type,
             "", // auth_value - empty for now
             &route.allowed_methods,
-            "", // oauth_token_url - empty for now
-            "", // oauth_client_id - empty for now
-            "", // oauth_client_secret - empty for now
-            "", // oauth_scope - empty for now
-            "", // jwt_secret - empty for now
+            "",      // oauth_token_url - empty for now
+            "",      // oauth_client_id - empty for now
+            "",      // oauth_client_secret - empty for now
+            "",      // oauth_scope - empty for now
+            "",      // jwt_secret - empty for now
             "HS256", // jwt_algorithm - default
-            "", // jwt_issuer - empty for now
-            "", // jwt_audience - empty for now
-            "", // jwt_required_claims - empty for now
+            "",      // jwt_issuer - empty for now
+            "",      // jwt_audience - empty for now
+            "",      // jwt_required_claims - empty for now
             route.rate_limit_per_minute,
             route.rate_limit_per_hour,
             "", // oidc_issuer - empty for now
@@ -826,7 +820,8 @@ pub async fn insert_routes_from_openapi(
             "", // oidc_audience - empty for now
             "", // oidc_scope - empty for now
             "", // health_endpoint - empty for now
-        ).await?;
+        )
+        .await?;
     }
     Ok(())
 }

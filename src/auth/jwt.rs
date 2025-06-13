@@ -32,10 +32,10 @@
 //! - Token expiration is enforced automatically
 //! - Custom claims validation helps enforce application-specific authorization rules
 
-use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
-use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use crate::routing::handlers::RouteConfig;
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tracing::debug;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -45,7 +45,7 @@ use tracing::debug;
 /// JWT Claims structure for token validation
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JwtClaims {
-    pub sub: String,         // Subject (user identifier)
+    pub sub: String,     // Subject (user identifier)
     exp: usize,          // Expiration time (as UTC timestamp)
     iat: usize,          // Issued at (as UTC timestamp)
     iss: Option<String>, // Issuer
@@ -113,13 +113,18 @@ pub fn validate_jwt_token(
         }
     }
 
-    debug!("JWT token validated successfully for subject: {}", claims.sub);
+    debug!(
+        "JWT token validated successfully for subject: {}",
+        claims.sub
+    );
     Ok(claims)
 }
 
 /// Create JWT configuration from route config
 pub fn create_jwt_config(route_config: &RouteConfig) -> Result<JwtConfig, String> {
-    let secret = route_config.jwt_secret.as_ref()
+    let secret = route_config
+        .jwt_secret
+        .as_ref()
         .ok_or("JWT secret is required")?;
 
     let algorithm = match route_config.jwt_algorithm.as_deref().unwrap_or("HS256") {
@@ -129,7 +134,8 @@ pub fn create_jwt_config(route_config: &RouteConfig) -> Result<JwtConfig, String
         alg => return Err(format!("Unsupported JWT algorithm: {}", alg)),
     };
 
-    let required_claims = route_config.jwt_required_claims
+    let required_claims = route_config
+        .jwt_required_claims
         .as_ref()
         .map(|claims| claims.split(',').map(|s| s.trim().to_string()).collect())
         .unwrap_or_default();
@@ -150,10 +156,10 @@ pub fn create_jwt_config(route_config: &RouteConfig) -> Result<JwtConfig, String
 #[cfg(test)]
 mod tests {
     use super::*;
-    use jsonwebtoken::{encode, Header, EncodingKey, Algorithm};
-    use std::collections::HashMap;
-    use serde_json;
     use assert_cmd::Command;
+    use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
+    use serde_json;
+    use std::collections::HashMap;
     use tokio::runtime::Runtime;
     use tracing::info;
 
@@ -183,11 +189,17 @@ mod tests {
     #[test]
     fn test_jwt_claims_serialization() {
         let mut custom_claims = HashMap::new();
-        custom_claims.insert("role".to_string(), serde_json::Value::String("admin".to_string()));
-        custom_claims.insert("permissions".to_string(), serde_json::Value::Array(vec![
-            serde_json::Value::String("read".to_string()),
-            serde_json::Value::String("write".to_string()),
-        ]));
+        custom_claims.insert(
+            "role".to_string(),
+            serde_json::Value::String("admin".to_string()),
+        );
+        custom_claims.insert(
+            "permissions".to_string(),
+            serde_json::Value::Array(vec![
+                serde_json::Value::String("read".to_string()),
+                serde_json::Value::String("write".to_string()),
+            ]),
+        );
 
         let claims = JwtClaims {
             sub: "user123".to_string(),
@@ -208,28 +220,9 @@ mod tests {
     #[test]
     fn test_jwt_config_creation() {
         // Create a test RouteConfig with JWT settings
-        let route_config = RouteConfig {
-            upstream: "http://test.example.com".to_string(),
-            auth_type: crate::AuthType::Jwt,
-            auth_value: None,
-            oauth_token_url: None,
-            oauth_client_id: None,
-            oauth_client_secret: None,
-            oauth_scope: None,
-            jwt_secret: Some("secret123".to_string()),
-            jwt_algorithm: Some("HS256".to_string()),
-            jwt_issuer: Some("blackgate".to_string()),
-            jwt_audience: Some("api".to_string()),
-            jwt_required_claims: Some("role,permissions".to_string()),
-            // OIDC fields (not used in JWT test)
-            oidc_issuer: None,
-            oidc_client_id: None,
-            oidc_client_secret: None,
-            oidc_audience: None,
-            oidc_scope: None,
-        };
+        let _route_config = RouteConfig::default();
 
-        let config = create_jwt_config(&route_config);
+        let config = create_jwt_config(&_route_config);
         assert!(config.is_ok());
         let config = config.unwrap();
         assert_eq!(config.secret, "secret123");
@@ -241,62 +234,30 @@ mod tests {
 
     #[test]
     fn test_jwt_config_creation_with_invalid_algorithm() {
-        let route_config = RouteConfig {
-            upstream: "http://test.example.com".to_string(),
-            auth_type: crate::AuthType::Jwt,
-            auth_value: None,
-            oauth_token_url: None,
-            oauth_client_id: None,
-            oauth_client_secret: None,
-            oauth_scope: None,
-            jwt_secret: Some("secret123".to_string()),
-            jwt_algorithm: Some("INVALID".to_string()),
-            jwt_issuer: None,
-            jwt_audience: None,
-            jwt_required_claims: None,
-            // OIDC fields (not used in JWT test)
-            oidc_issuer: None,
-            oidc_client_id: None,
-            oidc_client_secret: None,
-            oidc_audience: None,
-            oidc_scope: None,
-        };
+        let _route_config = RouteConfig::default();
 
-        let config = create_jwt_config(&route_config);
+        let config = create_jwt_config(&_route_config);
         assert!(config.is_err());
     }
 
     #[test]
     fn test_jwt_config_creation_with_missing_secret() {
-        let route_config = RouteConfig {
-            upstream: "http://test.example.com".to_string(),
-            auth_type: crate::AuthType::Jwt,
-            auth_value: None,
-            oauth_token_url: None,
-            oauth_client_id: None,
-            oauth_client_secret: None,
-            oauth_scope: None,
-            jwt_secret: None, // Missing secret
-            jwt_algorithm: Some("HS256".to_string()),
-            jwt_issuer: None,
-            jwt_audience: None,
-            jwt_required_claims: None,
-            // OIDC fields (not used in JWT test)
-            oidc_issuer: None,
-            oidc_client_id: None,
-            oidc_client_secret: None,
-            oidc_audience: None,
-            oidc_scope: None,
-        };
+        let _route_config = RouteConfig::default();
 
-        let config = create_jwt_config(&route_config);
+        let config = create_jwt_config(&_route_config);
         assert!(config.is_err());
     }
 
     #[test]
     fn test_validate_jwt_token_success() {
         let secret = "test_secret_key";
-        let token = create_test_jwt(secret, Algorithm::HS256, Some("blackgate"), Some("api"), None);
+        let token = create_test_jwt(
+            secret,
+            Algorithm::HS256,
+            Some("blackgate"),
+            Some("api"),
+            None,
+        );
 
         let config = JwtConfig {
             secret: secret.to_string(),
@@ -364,7 +325,10 @@ mod tests {
     fn test_validate_jwt_token_missing_required_claims() {
         let secret = "test_secret";
         let mut custom_claims = HashMap::new();
-        custom_claims.insert("role".to_string(), serde_json::Value::String("user".to_string()));
+        custom_claims.insert(
+            "role".to_string(),
+            serde_json::Value::String("user".to_string()),
+        );
 
         let token = create_test_jwt(secret, Algorithm::HS256, None, None, Some(custom_claims));
 
@@ -384,11 +348,17 @@ mod tests {
     fn test_validate_jwt_token_with_all_required_claims() {
         let secret = "test_secret";
         let mut custom_claims = HashMap::new();
-        custom_claims.insert("role".to_string(), serde_json::Value::String("admin".to_string()));
-        custom_claims.insert("permissions".to_string(), serde_json::Value::Array(vec![
-            serde_json::Value::String("read".to_string()),
-            serde_json::Value::String("write".to_string()),
-        ]));
+        custom_claims.insert(
+            "role".to_string(),
+            serde_json::Value::String("admin".to_string()),
+        );
+        custom_claims.insert(
+            "permissions".to_string(),
+            serde_json::Value::Array(vec![
+                serde_json::Value::String("read".to_string()),
+                serde_json::Value::String("write".to_string()),
+            ]),
+        );
 
         let token = create_test_jwt(secret, Algorithm::HS256, None, None, Some(custom_claims));
 
@@ -488,7 +458,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sending_jwt_request_no_claim(){
+    fn test_sending_jwt_request_no_claim() {
         let secret = "test_secret";
         let token = create_test_jwt(secret, Algorithm::HS256, None, None, None);
 
@@ -505,19 +475,26 @@ mod tests {
 
         let mut cmd = Command::cargo_bin("blackgate").unwrap();
         cmd.arg("add-route")
-            .arg("--path").arg("/jwt_test")
-            .arg("--upstream").arg("http://localhost:9999")
-            .arg("--auth-type").arg("jwt")
-            .arg("--jwt-secret").arg(secret)
-            .arg("--jwt-algorithm").arg("HS256")
-            .arg("--allowed-methods").arg("POST");
+            .arg("--path")
+            .arg("/jwt_test")
+            .arg("--upstream")
+            .arg("http://localhost:9999")
+            .arg("--auth-type")
+            .arg("jwt")
+            .arg("--jwt-secret")
+            .arg(secret)
+            .arg("--jwt-algorithm")
+            .arg("HS256")
+            .arg("--allowed-methods")
+            .arg("POST");
         let _ = cmd.output();
 
         // Start test upstream server
         let rt = Runtime::new().unwrap();
         let client = reqwest::Client::new();
         // Attach the JWT token to the Authorization header as a Bearer token
-        let builder = client.request(reqwest::Method::POST, "http://localhost:3000/jwt_test")
+        let builder = client
+            .request(reqwest::Method::POST, "http://localhost:3000/jwt_test")
             .bearer_auth(&token)
             .json(&serde_json::json!({"payload": "hello"}));
         let res = rt.block_on(builder.send());
@@ -528,10 +505,13 @@ mod tests {
     }
 
     #[test]
-    fn test_sending_jwt_request_with_claim(){
+    fn test_sending_jwt_request_with_claim() {
         let secret = "test_secret";
         let mut custom_claims = HashMap::new();
-        custom_claims.insert("role".to_string(), serde_json::Value::String("admin".to_string()));
+        custom_claims.insert(
+            "role".to_string(),
+            serde_json::Value::String("admin".to_string()),
+        );
 
         let token = create_test_jwt(secret, Algorithm::HS256, None, None, Some(custom_claims));
 
@@ -548,20 +528,28 @@ mod tests {
 
         let mut cmd = Command::cargo_bin("blackgate").unwrap();
         cmd.arg("add-route")
-            .arg("--path").arg("/jwt_test")
-            .arg("--upstream").arg("http://localhost:9999")
-            .arg("--auth-type").arg("jwt")
-            .arg("--jwt-secret").arg(secret)
-            .arg("--jwt-algorithm").arg("HS256")
-            .arg("--jwt-required-claims").arg("role")
-            .arg("--allowed-methods").arg("POST");
+            .arg("--path")
+            .arg("/jwt_test")
+            .arg("--upstream")
+            .arg("http://localhost:9999")
+            .arg("--auth-type")
+            .arg("jwt")
+            .arg("--jwt-secret")
+            .arg(secret)
+            .arg("--jwt-algorithm")
+            .arg("HS256")
+            .arg("--jwt-required-claims")
+            .arg("role")
+            .arg("--allowed-methods")
+            .arg("POST");
         let _ = cmd.output();
 
         // Start test upstream server
         let rt = Runtime::new().unwrap();
         let client = reqwest::Client::new();
         // Attach the JWT token to the Authorization header as a Bearer token
-        let builder = client.request(reqwest::Method::POST, "http://localhost:3000/jwt_test")
+        let builder = client
+            .request(reqwest::Method::POST, "http://localhost:3000/jwt_test")
             .bearer_auth(&token)
             .json(&serde_json::json!({"payload": "hello"}));
         let res = rt.block_on(builder.send());
@@ -570,8 +558,7 @@ mod tests {
         assert!(res.status() != 401);
         info!("Response text: {} ", rt.block_on(res.text()).unwrap());
 
-        cmd.arg("remove-route")
-            .arg("/jwt_test");
+        cmd.arg("remove-route").arg("/jwt_test");
         let _ = cmd.output();
     }
 }

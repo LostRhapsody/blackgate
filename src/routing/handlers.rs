@@ -61,26 +61,29 @@
 //!     .with_state(app_state);
 //! ```
 
-use axum::{extract::OriginalUri, http::{HeaderMap, Method}};
-use sqlx::Row;
-use tokio::time::Instant;
-use tracing::{info, warn, error, debug};
 use crate::{
+    AppState,
     auth::{apply_authentication, types::AuthType},
     cache::{CachedResponse, UpstreamResponseCacheKey},
-    database::queries, 
-    health::HealthStatus, 
-    metrics::{store_metrics_async, RequestMetrics}, 
-    rate_limiter::check_rate_limit, 
-    AppState,
+    database::queries,
+    health::HealthStatus,
+    metrics::{RequestMetrics, store_metrics},
+    rate_limiter::check_rate_limit,
 };
+use axum::{
+    extract::OriginalUri,
+    http::{HeaderMap, Method},
+};
+use sqlx::Row;
+use tokio::time::Instant;
+use tracing::{error, info, warn};
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Public Structs                            ****//
 ///////////////////////////////////////////////////////////////////////////////
 
 /// Route configuration structure to hold authentication details, shared between handlers and routes
-/// Note: There are quite a few fields we don't really use here, but they are required so we can 
+/// Note: There are quite a few fields we don't really use here, but they are required so we can
 /// cache the RouteConfig and avoid additional database queries.
 #[derive(Debug, Clone)]
 pub struct RouteConfig {
@@ -127,6 +130,51 @@ pub struct RouteConfig {
     pub default_oidc_scope: Option<String>,
 }
 
+impl Default for RouteConfig {
+    fn default() -> Self {
+        Self {
+            upstream: "http://test.example.com".to_string(),
+            auth_type: AuthType::Jwt,
+            auth_value: None,
+            allowed_methods: "GET,POST,PUT,PATCH,DELETE,HEAD".to_string(),
+            rate_limit_per_minute: 0,
+            rate_limit_per_hour: 0,
+            backup_path: None,
+            collection_id: None,
+            oauth_token_url: None,
+            oauth_client_id: None,
+            oauth_client_secret: None,
+            oauth_scope: None,
+            jwt_secret: Some("secret123".to_string()),
+            jwt_algorithm: Some("HS256".to_string()),
+            jwt_issuer: Some("example.com".to_string()),
+            jwt_audience: Some("example.com".to_string()),
+            jwt_required_claims: Some("sub".to_string()),
+            oidc_issuer: Some("https://example.com".to_string()),
+            oidc_client_id: Some("client_id".to_string()),
+            oidc_client_secret: Some("client_secret".to_string()),
+            oidc_audience: Some("example.com".to_string()),
+            oidc_scope: Some("openid profile email".to_string()),
+            default_auth_type: None,
+            default_auth_value: None,
+            default_oauth_token_url: None,
+            default_oauth_client_id: None,
+            default_oauth_client_secret: None,
+            default_oauth_scope: None,
+            default_jwt_secret: Some("secret123".to_string()),
+            default_jwt_algorithm: Some("HS256".to_string()),
+            default_jwt_issuer: Some("example.com".to_string()),
+            default_jwt_audience: Some("example.com".to_string()),
+            default_jwt_required_claims: Some("sub".to_string()),
+            default_oidc_issuer: Some("https://example.com".to_string()),
+            default_oidc_client_id: Some("client_id".to_string()),
+            default_oidc_client_secret: Some("client_secret".to_string()),
+            default_oidc_audience: Some("example.com".to_string()),
+            default_oidc_scope: Some("openid profile email".to_string()),
+        }
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 //****                       Public Functions                            ****//
 ///////////////////////////////////////////////////////////////////////////////
@@ -137,8 +185,17 @@ pub async fn handle_get_request(
     OriginalUri(uri): OriginalUri,
     headers: HeaderMap,
 ) -> axum::response::Response {
-    let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok().map(|s| s.to_string()));
-    handle_request_core(state, Method::GET, uri.path().to_string(), None, auth_header).await
+    let auth_header = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok().map(|s| s.to_string()));
+    handle_request_core(
+        state,
+        Method::GET,
+        uri.path().to_string(),
+        None,
+        auth_header,
+    )
+    .await
 }
 
 /// Handles HEAD requests
@@ -147,8 +204,17 @@ pub async fn handle_head_request(
     OriginalUri(uri): OriginalUri,
     headers: HeaderMap,
 ) -> axum::response::Response {
-    let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok().map(|s| s.to_string()));
-    handle_request_core(state, Method::HEAD, uri.path().to_string(), None, auth_header).await
+    let auth_header = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok().map(|s| s.to_string()));
+    handle_request_core(
+        state,
+        Method::HEAD,
+        uri.path().to_string(),
+        None,
+        auth_header,
+    )
+    .await
 }
 
 /// Handles DELETE requests
@@ -157,8 +223,17 @@ pub async fn handle_delete_request(
     OriginalUri(uri): OriginalUri,
     headers: HeaderMap,
 ) -> axum::response::Response {
-    let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok().map(|s| s.to_string()));
-    handle_request_core(state, Method::DELETE, uri.path().to_string(), None, auth_header).await
+    let auth_header = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok().map(|s| s.to_string()));
+    handle_request_core(
+        state,
+        Method::DELETE,
+        uri.path().to_string(),
+        None,
+        auth_header,
+    )
+    .await
 }
 
 /// Handles POST requests
@@ -169,7 +244,9 @@ pub async fn handle_post_request(
     payload: axum::body::Bytes,
 ) -> axum::response::Response {
     let body_string = String::from_utf8_lossy(&payload).to_string();
-    let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok().map(|s| s.to_string()));
+    let auth_header = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok().map(|s| s.to_string()));
     handle_request_core(
         state,
         Method::POST,
@@ -188,7 +265,9 @@ pub async fn handle_put_request(
     payload: axum::body::Bytes,
 ) -> axum::response::Response {
     let body_string = String::from_utf8_lossy(&payload).to_string();
-    let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok().map(|s| s.to_string()));
+    let auth_header = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok().map(|s| s.to_string()));
     handle_request_core(
         state,
         Method::PUT,
@@ -207,7 +286,9 @@ pub async fn handle_patch_request(
     payload: axum::body::Bytes,
 ) -> axum::response::Response {
     let body_string = String::from_utf8_lossy(&payload).to_string();
-    let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok().map(|s| s.to_string()));
+    let auth_header = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok().map(|s| s.to_string()));
     handle_request_core(
         state,
         Method::PATCH,
@@ -243,7 +324,7 @@ pub async fn handle_request_core(
         &path,
         method.as_str(),
         None, // TODO: Parse query params if needed
-        body.as_ref().map(|b| b.as_bytes())
+        body.as_ref().map(|b| b.as_bytes()),
     );
 
     info!("cache key: {}", cache_key);
@@ -255,11 +336,11 @@ pub async fn handle_request_core(
             path = %path,
             "Serving response from cache"
         );
-        
+
         // Update metrics for cache hit
         metrics.cache_hit = true;
-        store_metrics_async(state.db.clone(), metrics);
-        
+        store_metrics(state.db.clone(), metrics);
+
         // Convert cached response back to axum response
         return convert_cached_response(cached);
     } else {
@@ -281,7 +362,7 @@ pub async fn handle_request_core(
             );
 
             metrics.set_error("Route not found".to_string());
-            store_metrics_async(state.db.clone(), metrics);
+            store_metrics(state.db.clone(), metrics);
 
             return axum::response::Response::builder()
                 .status(404)
@@ -301,7 +382,7 @@ pub async fn handle_request_core(
         );
 
         metrics.set_error("Method Not Allowed".to_string());
-        store_metrics_async(state.db.clone(), metrics);
+        store_metrics(state.db.clone(), metrics);
 
         return axum::response::Response::builder()
             .status(405)
@@ -317,19 +398,24 @@ pub async fn handle_request_core(
             route_config.rate_limit_per_hour,
             state.rate_limiter.clone(),
             &mut metrics,
-        ).await {
-            store_metrics_async(state.db.clone(), metrics);
+        )
+        .await
+        {
+            store_metrics(state.db.clone(), metrics);
             return response;
-        }  
-    }  
+        }
+    }
 
     // Check route health status for the backup route fallback using cache
     let current_route = route_config;
-    
+
     // Try to get health status from cache (fast, non-blocking)
-    let primary_health_status = state.health_checker.get_cached_health_status(&path).await
+    let primary_health_status = state
+        .health_checker
+        .get_cached_health_status(&path)
+        .await
         .unwrap_or(HealthStatus::Unknown); // Default to Unknown if not cached
-    
+
     // Try to get a healthy route (either the primary or backup)
     let route_config = if primary_health_status == HealthStatus::Unhealthy {
         // If primary route is unhealthy, check for backup route
@@ -354,7 +440,10 @@ pub async fn handle_request_core(
             match get_cached_route_config(&state, &backup_route_path).await {
                 Some(backup_route) => {
                     // Check if backup route is healthy (from cache)
-                    let backup_health_status = state.health_checker.get_cached_health_status(&backup_route_path).await
+                    let backup_health_status = state
+                        .health_checker
+                        .get_cached_health_status(&backup_route_path)
+                        .await
                         .unwrap_or(HealthStatus::Unknown); // Default to Unknown if not cached
 
                     if backup_health_status == HealthStatus::Healthy {
@@ -429,12 +518,27 @@ pub async fn handle_request_core(
 
     // Determine final authentication configuration
     // Check if route uses collection authentication (route auth is None and has collection)
-    let use_collection_auth = route_config.auth_type == AuthType::None && route_config.collection_id.is_some();
-    
-    let (final_auth_type, final_auth_value, final_oauth_token_url, final_oauth_client_id, 
-         final_oauth_client_secret, final_oauth_scope, final_jwt_secret, final_jwt_algorithm,
-         final_jwt_issuer, final_jwt_audience, final_jwt_required_claims, final_oidc_issuer,
-         final_oidc_client_id, final_oidc_client_secret, final_oidc_audience, final_oidc_scope) = if use_collection_auth {
+    let use_collection_auth =
+        route_config.auth_type == AuthType::None && route_config.collection_id.is_some();
+
+    let (
+        final_auth_type,
+        final_auth_value,
+        final_oauth_token_url,
+        final_oauth_client_id,
+        final_oauth_client_secret,
+        final_oauth_scope,
+        final_jwt_secret,
+        final_jwt_algorithm,
+        final_jwt_issuer,
+        final_jwt_audience,
+        final_jwt_required_claims,
+        final_oidc_issuer,
+        final_oidc_client_id,
+        final_oidc_client_secret,
+        final_oidc_audience,
+        final_oidc_scope,
+    ) = if use_collection_auth {
         // Use collection defaults
         info!(
             request_id = %metrics.id,
@@ -442,7 +546,7 @@ pub async fn handle_request_core(
             collection_id = route_config.collection_id.unwrap_or(0),
             "Using collection authentication for route"
         );
-        
+
         let collection_auth_type_str = route_config.default_auth_type.as_deref().unwrap_or("none");
         (
             AuthType::from_str(collection_auth_type_str),
@@ -535,7 +639,9 @@ pub async fn handle_request_core(
     );
 
     // Use the pooled HTTP client
-    let builder = state.http_client.request(method.clone(), &auth_route_config.upstream);
+    let builder = state
+        .http_client
+        .request(method.clone(), &auth_route_config.upstream);
 
     // Apply authentication
     let builder = match apply_authentication(
@@ -556,7 +662,7 @@ pub async fn handle_request_core(
             );
 
             metrics.set_error("Authentication failed".to_string());
-            store_metrics_async(state.db.clone(), metrics);
+            store_metrics(state.db.clone(), metrics);
 
             return response;
         }
@@ -584,7 +690,7 @@ pub async fn handle_request_core(
             );
 
             metrics.set_error(format!("Upstream request failed: {}", e));
-            store_metrics_async(state.db.clone(), metrics);
+            store_metrics(state.db.clone(), metrics);
 
             return axum::response::Response::builder()
                 .status(502)
@@ -594,7 +700,7 @@ pub async fn handle_request_core(
     };
 
     let upstream_duration = upstream_start.elapsed();
-    let response_status = response.status();    
+    let response_status = response.status();
     let response_headers = response.headers().clone();
     let response_body = match response.text().await {
         Ok(body) => body,
@@ -606,7 +712,7 @@ pub async fn handle_request_core(
             );
 
             metrics.set_error(format!("Failed to read response body: {}", e));
-            store_metrics_async(state.db.clone(), metrics);
+            store_metrics(state.db.clone(), metrics);
 
             return axum::response::Response::builder()
                 .status(502)
@@ -635,31 +741,36 @@ pub async fn handle_request_core(
     );
 
     // Store metrics in database asynchronously (non-blocking)
-    store_metrics_async(state.db.clone(), metrics);
+    store_metrics(state.db.clone(), metrics);
 
     // Cache successful responses (2xx status codes)
     if response_status.is_success() {
         info!("Caching response for {} {}", method, path);
-        
+
         let response_body_bytes = response_body.as_bytes().to_vec();
-        
+
         // Spawn a task to cache the response asynchronously
         let cache = state.response_cache.clone();
         let cache_key = cache_key.clone();
-        
+
         tokio::spawn(async move {
             // Only cache if the response is not too large (e.g., < 10MB)
             const MAX_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10MB
             if response_body_bytes.len() < MAX_CACHE_SIZE {
-                cache.set(
-                    cache_key,
-                    response_status,
-                    response_headers,
-                    response_body_bytes,
-                ).await;
+                cache
+                    .set(
+                        cache_key,
+                        response_status,
+                        response_headers,
+                        response_body_bytes,
+                    )
+                    .await;
                 info!("Response cached for {} {}", method, path);
             } else {
-                warn!("Response too large to cache ({} bytes)", response_body_bytes.len());
+                warn!(
+                    "Response too large to cache ({} bytes)",
+                    response_body_bytes.len()
+                );
             }
         });
     }
@@ -686,7 +797,11 @@ fn build_route_config_from_row(row: &sqlx::sqlite::SqliteRow) -> RouteConfig {
         rate_limit_per_hour: row.get("rate_limit_per_hour"),
         backup_path: {
             let backup_path: String = row.get("backup_route_path");
-            if backup_path.is_empty() { None } else { Some(backup_path) }
+            if backup_path.is_empty() {
+                None
+            } else {
+                Some(backup_path)
+            }
         },
         collection_id: row.get("collection_id"),
         oauth_token_url: row.get("oauth_token_url"),
@@ -741,13 +856,13 @@ async fn load_and_cache_route_config(state: &AppState, path: &str) -> Option<Rou
     match queries::fetch_route_config_with_collection_by_path(&state.db, path).await {
         Ok(Some(row)) => {
             let config = build_route_config_from_row(&row);
-            
+
             // Cache the result
             {
                 let mut cache = state.route_cache.write().await;
                 cache.insert(path.to_string(), config.clone());
             }
-            
+
             Some(config)
         }
         Ok(None) => None,
@@ -764,16 +879,15 @@ fn is_method_allowed(method: &Method, allowed_methods: &str) -> bool {
     if allowed_methods.is_empty() || method.as_str() == "HEAD" {
         return true;
     }
-    
+
     let allowed_methods: Vec<&str> = allowed_methods.split(',').collect();
     allowed_methods.contains(&method.as_str())
 }
 
 /// Convert a CachedResponse back to an Axum response
 fn convert_cached_response(cached: CachedResponse) -> axum::response::Response {
-    let mut response = axum::response::Response::builder()
-        .status(cached.status);
-    
+    let mut response = axum::response::Response::builder().status(cached.status);
+
     // Add all headers from the cached response
     let response_headers = response.headers_mut().unwrap();
     for (key, value) in cached.headers.iter() {
@@ -783,13 +897,12 @@ fn convert_cached_response(cached: CachedResponse) -> axum::response::Response {
             }
         }
     }
-    
+
     // Add cache hit header
     response_headers.insert("X-Cache", "HIT".parse().unwrap());
-    
+
     // Set the response body
-    response.body(axum::body::Body::from(cached.body))
-        .unwrap()
+    response.body(axum::body::Body::from(cached.body)).unwrap()
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -424,6 +424,23 @@ pub async fn clear_route_health_status(
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+//****                        Error Log Queries                          ****//
+///////////////////////////////////////////////////////////////////////////////
+
+/// Fetch all error logs for webhook reporting, ordered by most recent first
+pub async fn fetch_all_error_logs(
+    pool: &SqlitePool,
+) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
+    sqlx::query(
+        "SELECT id, error_message, severity, context, file_location, line_number, function_name, created_at 
+         FROM error_logs 
+         ORDER BY created_at DESC"
+    )
+    .fetch_all(pool)
+    .await
+}
+
+///////////////////////////////////////////////////////////////////////////////
 //****                        Settings Queries                           ****//
 ///////////////////////////////////////////////////////////////////////////////
 

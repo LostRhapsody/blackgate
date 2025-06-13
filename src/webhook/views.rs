@@ -208,40 +208,180 @@ pub fn build_health_check_view(health_checks: &[sqlx::sqlite::SqliteRow]) -> Str
 /// and error statistics that can be consumed by monitoring services
 /// or displayed in web interfaces.
 ///
+/// # Arguments
+///
+/// * `error_logs` - A slice of SQLite rows containing error log data
+///
 /// # Returns
 ///
 /// A `String` containing the HTML representation of error report data
-///
-/// # TODO
-///
-/// Implement the actual error reporting view generation logic
-pub fn build_error_reporting_view() -> String {
-    // Placeholder implementation
-    r#"<!DOCTYPE html>
+pub fn build_error_reporting_view(error_logs: &[sqlx::sqlite::SqliteRow]) -> String {
+    use sqlx::Row;
+
+    let total_errors = error_logs.len();
+
+    // Generate error log rows HTML
+    let error_rows: String = if error_logs.is_empty() {
+        r#"<tr><td colspan="4" class="no-data">No error logs found</td></tr>"#.to_string()
+    } else {        error_logs
+            .iter()
+            .map(|row| {
+                let id = row.get::<String, _>("id");
+                let message = row.get::<String, _>("error_message");
+                let severity = row.get::<String, _>("severity");
+                let context = row
+                    .get::<Option<String>, _>("context")
+                    .unwrap_or_else(|| "No context".to_string());
+                let file_location = row
+                    .get::<Option<String>, _>("file_location")
+                    .unwrap_or_else(|| "Unknown".to_string());
+                let line_number = row
+                    .get::<Option<i64>, _>("line_number")
+                    .map(|n| n.to_string())
+                    .unwrap_or_else(|| "Unknown".to_string());
+                let function_name = row
+                    .get::<Option<String>, _>("function_name")
+                    .unwrap_or_else(|| "Unknown".to_string());
+                let created_at = row.get::<String, _>("created_at");
+
+                // Truncate long messages for table display
+                let display_message = if message.len() > 80 {
+                    format!("{}...", &message[..80])
+                } else {
+                    message.clone()
+                };
+
+                let details_row = if context != "No context" || file_location != "Unknown" {
+                    format!(
+                        r#"<tr class="error-details-row" style="display: none;">
+                            <td colspan="5">
+                                <div class="error-details">
+                                    <strong>Severity:</strong> {}<br>
+                                    <strong>Context:</strong> {}<br>
+                                    <strong>File:</strong> {}:{}<br>
+                                    <strong>Function:</strong> {}
+                                </div>
+                            </td>
+                        </tr>"#,
+                        severity, context, file_location, line_number, function_name
+                    )
+                } else {
+                    String::new()
+                };
+
+                format!(
+                    r#"
+                <tr>
+                    <td>{}</td>
+                    <td>{}</td>
+                    <td>{}</td>
+                    <td>{}</td>
+                    <td>{}</td>
+                </tr>{}"#,
+                    &id[..8], // Show first 8 chars of UUID for brevity
+                    display_message, 
+                    severity,
+                    created_at, 
+                    r#"<button onclick="toggleDetails(this)">Details</button>"#,
+                    details_row
+                )
+            })
+            .collect()
+    };
+
+    format!(
+        r#"<!DOCTYPE html>
 <html>
 <head>
     <title>Error Report - Blackgate API Gateway</title>
     <meta charset="utf-8">
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .error-summary { padding: 10px; background-color: #f8f9fa; border-radius: 5px; margin-bottom: 20px; }
-        .error-item { padding: 10px; border-left: 4px solid #dc3545; margin-bottom: 10px; background-color: #f8d7da; }
-        .timestamp { color: #6c757d; font-size: 0.9em; }
-    </style>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <script>
+        function toggleDetails(button) {{
+            const row = button.closest('tr');
+            const detailsRow = row.nextElementSibling;
+            if (detailsRow && detailsRow.classList.contains('error-details-row')) {{
+                if (detailsRow.style.display === 'none') {{
+                    detailsRow.style.display = '';
+                    button.textContent = 'Hide';
+                }} else {{
+                    detailsRow.style.display = 'none';
+                    button.textContent = 'Details';
+                }}
+            }}
+        }}
+    </script>
 </head>
 <body>
-    <h1>Blackgate API Gateway - Error Report</h1>
-    <div class="error-summary">
-        <h2>Error Summary</h2>
-        <p>Total errors in last 24h: [Count placeholder]</p>
-        <p>Last updated: [Timestamp placeholder]</p>
+    <nav>
+        <div class="nav-header">
+            <h1>Blackgate API Gateway - Error Report</h1>
+            <div class="header-links">
+                <a href="/" class="header-link">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                        <polyline points="9,22 9,12 15,12 15,22"/>
+                    </svg>
+                    Dashboard
+                </a>
+                <a href="/webhooks/errors/json" class="header-link">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14,2 14,8 20,8"/>
+                        <line x1="16" y1="13" x2="8" y2="13"/>
+                        <line x1="16" y1="17" x2="8" y2="17"/>
+                        <polyline points="10,9 9,9 8,9"/>
+                    </svg>
+                    JSON API
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="dashboard-container">
+        <div class="dashboard-summary">
+            <div class="dashboard-header">
+                <h2>Error Log Summary</h2>
+                <span class="health-indicator {}">Total Errors: {}</span>
+            </div>
+            
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <label>Total Error Logs</label>
+                    <span>{}</span>
+                </div>
+                <div class="stat-item">
+                    <label>Status</label>
+                    <span class="{}">{}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="dashboard-section">
+            <h3>Error Log Details</h3>            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Error Message</th>
+                        <th>Severity</th>
+                        <th>Timestamp</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {}
+                </tbody>
+            </table>
+        </div>
     </div>
-    <div class="error-item">
-        <h3>Sample Error</h3>
-        <p>Error message: [Placeholder error message]</p>
-        <p class="timestamp">Timestamp: [Timestamp placeholder]</p>
-    </div>
-    <!-- TODO: Implement actual error data display -->
 </body>
-</html>"#.to_string()
+</html>"#,
+        // Color coding based on error count
+        if total_errors == 0 { "health-green" } else if total_errors <= 10 { "health-yellow" } else { "health-red" },
+        total_errors,
+        total_errors,
+        if total_errors == 0 { "health-green" } else if total_errors <= 10 { "health-yellow" } else { "health-red" },
+        if total_errors == 0 { "No Errors" } else if total_errors <= 10 { "Few Errors" } else { "Many Errors" },
+        error_rows
+    )
 }

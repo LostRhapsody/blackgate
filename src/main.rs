@@ -104,19 +104,5 @@ async fn main() {
         .await
         .expect("Failed to initialize database");
 
-    // throw an error for testing
-    let context = ErrorContext::new()
-        .with_route("/api/test".to_string())
-        .with_method("GET".to_string());
-    log_error_async(
-        &pool,
-        ErrorSeverity::Error,
-        "I'm just a fake error!".to_string(),
-        Some(context),
-        file!(),
-        line!(),
-        Some("Main".to_string())
-    ).await;
-
     cli::parse_cli_commands(Arc::new(&pool)).await;
 }

@@ -14,6 +14,7 @@ use axum::{
     response::{Html, Json},
     extract::State,
 };
+use sqlx::Row;
 use serde_json::{json, Value};
 use crate::AppState;
 use crate::database::queries;
@@ -60,14 +61,15 @@ pub async fn handle_health_check_view(
 /// # Returns
 /// 
 /// An `Html<String>` response containing the error reporting view
-/// 
-/// # TODO
-/// 
-/// Implement actual error data retrieval from application state
 pub async fn handle_error_reporting_view(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
 ) -> Html<String> {
-    let html_content = views::build_error_reporting_view();
+    // Fetch error logs from database
+    let error_logs = queries::fetch_all_error_logs(&state.db)
+        .await
+        .unwrap_or_else(|_| Vec::new());
+    
+    let html_content = views::build_error_reporting_view(&error_logs);
     Html(html_content)
 }
 
@@ -131,45 +133,36 @@ pub async fn handle_health_check_json(
 /// # Returns
 /// 
 /// A `Json<Value>` response containing error data in JSON format
-/// 
-/// # TODO
-/// 
-/// Implement actual error data retrieval and JSON serialization
 pub async fn handle_error_reporting_json(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
 ) -> Json<Value> {
-    // Placeholder JSON response
-    let error_data = json!({
+    // Fetch error logs from database
+    let error_logs = queries::fetch_all_error_logs(&state.db)
+        .await
+        .unwrap_or_else(|_| Vec::new());
+      // Transform database rows into JSON format
+    let error_data: Vec<Value> = error_logs.iter().map(|row| {
+        json!({
+            "id": row.get::<String, _>("id"),
+            "message": row.get::<String, _>("error_message"),
+            "severity": row.get::<String, _>("severity"),
+            "context": row.get::<Option<String>, _>("context"),
+            "file_location": row.get::<Option<String>, _>("file_location"),
+            "line_number": row.get::<Option<i64>, _>("line_number"),
+            "function_name": row.get::<Option<String>, _>("function_name"),
+            "timestamp": row.get::<String, _>("created_at")
+        })
+    }).collect();
+    
+    let response_data = json!({
         "summary": {
-            "total_errors_24h": 5,
-            "error_rate": 0.004,
-            "last_updated": "2025-06-13T00:00:00Z"
+            "total_errors": error_data.len(),
+            "last_updated": chrono::Utc::now().to_rfc3339()
         },
-        "recent_errors": [
-            {
-                "id": "err_001",
-                "message": "Database connection timeout",
-                "timestamp": "2025-06-13T00:00:00Z",
-                "severity": "warning",
-                "count": 2
-            },
-            {
-                "id": "err_002", 
-                "message": "Rate limit exceeded",
-                "timestamp": "2025-06-12T23:30:00Z",
-                "severity": "info",
-                "count": 3
-            }
-        ],
-        "error_categories": {
-            "database": 2,
-            "rate_limiting": 3,
-            "authentication": 0,
-            "routing": 0
-        }
+        "error_logs": error_data
     });
     
-    Json(error_data)
+    Json(response_data)
 }
 
 ///////////////////////////////////////////////////////////////////////////////

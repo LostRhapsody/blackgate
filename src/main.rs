@@ -26,6 +26,7 @@ mod rate_limiter;
 mod routing;
 mod server;
 mod web;
+mod webhook;
 
 #[cfg(test)]
 mod tests;

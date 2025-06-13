@@ -1,4 +1,3 @@
-
 //! # Router Module
 //! 
 //! This module provides HTTP routing functionality for the Blackgate application.
@@ -29,6 +28,7 @@
 use axum::{Router, routing::{get, post, put, delete, patch, head}};
 use tower_http::trace::TraceLayer;
 use crate::web;
+use crate::webhook;
 use super::handlers::{handle_get_request, handle_head_request, handle_delete_request, handle_post_request, handle_put_request, handle_patch_request};
 use crate::AppState;
 
@@ -39,6 +39,7 @@ use crate::AppState;
 pub fn create_router(state: AppState) -> Router {
     Router::new()
         .merge(web::create_web_router())
+        .merge(webhook::create_webhook_router())
         .route("/{*path}", get(handle_get_request))
         .route("/{*path}", head(handle_head_request))
         .route("/{*path}", delete(handle_delete_request))

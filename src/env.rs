@@ -15,6 +15,7 @@
 //! ## Logging Configuration
 //! - `RUST_LOG`: Standard Rust logging configuration
 //! - `BLACKGATE_LOG_LEVEL`: Application-specific log level override
+//! - `BLACKGATE_ERROR_LOG_RETENTION_DAYS`: Days to keep error logs in database (default: "7")
 //!
 //! ## Cache Configuration
 //! - `BLACKGATE_RESPONSE_CACHE_TTL`: Default response cache TTL in seconds (default: "300")
@@ -88,6 +89,7 @@ pub struct AppConfig {
 
     // Logging
     pub log_level: String,
+    pub error_log_retention_days: u32,
 
     // Cache
     pub response_cache_ttl: u64,
@@ -201,6 +203,10 @@ pub fn validate_environment() -> Result<AppConfig, Vec<EnvValidationError>> {
             "blackgate=info,tower_http=debug".to_string()
         });
 
+    // Error log retention configuration
+    let error_log_retention_days =
+        parse_env_var_with_default("BLACKGATE_ERROR_LOG_RETENTION_DAYS", 7, &mut warnings);
+
     // Cache configuration
     let response_cache_ttl =
         parse_env_var_with_default("BLACKGATE_RESPONSE_CACHE_TTL", 300, &mut warnings);
@@ -269,6 +275,7 @@ pub fn validate_environment() -> Result<AppConfig, Vec<EnvValidationError>> {
         port,
         bind_address,
         log_level,
+        error_log_retention_days,
         response_cache_ttl,
         response_cache_max_size,
         rate_limit_global,
@@ -416,6 +423,10 @@ BLACKGATE_PORT=3000
 #   RUST_LOG=blackgate=debug,tower_http=info    # Custom per-module levels
 #   BLACKGATE_LOG_LEVEL=info                    # Override for blackgate only
 RUST_LOG=blackgate=info,tower_http=debug
+
+# Error log retention in days
+# Default: 7 (keep error logs for 7 days)
+BLACKGATE_ERROR_LOG_RETENTION_DAYS=7
 
 # =============================================================================
 # Cache Configuration

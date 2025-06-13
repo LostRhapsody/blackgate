@@ -41,6 +41,7 @@ use crate::database::backup::BackupManager;
 use crate::database::queries::get_setting_by_key;
 use crate::env::AppConfig;
 use crate::health::HealthChecker;
+use crate::logging::errors::cleanup_old_error_logs;
 use crate::rate_limiter::RateLimiter;
 use crate::routing::router::create_router;
 use sqlx::{Row, sqlite::SqlitePool};
@@ -288,6 +289,65 @@ async fn start_background_services(
             }
 
             response_cache.cleanup().await;
+        }
+    });
+
+    // Start error log cleanup background service
+    let error_pool = pool.clone();
+    let error_shutdown = shutdown_coordinator.clone();
+    tokio::spawn(async move {
+        let mut shutdown_task = shutdown::ShutdownAwareTask::new(&error_shutdown);
+
+        info!("Starting error log cleanup background service");
+        loop {
+            // Wait for 1 hour or shutdown signal
+            if shutdown_task
+                .wait_or_shutdown(tokio::time::Duration::from_secs(3600))
+                .await
+            {
+                info!("Error log cleanup service shutting down");
+                break;
+            }
+
+            // Get retention days from settings or use default
+            let retention_days = match get_setting_by_key(&error_pool, "error_log_retention_days") {
+                Ok(Some(row)) => {
+                    let value_str: String = row.get("value");
+                    value_str.parse::<u32>().unwrap_or_else(|e| {
+                        warn!(
+                            "Failed to parse error_log_retention_days setting '{}': {}, using default 7",
+                            value_str, e
+                        );
+                        7
+                    })
+                }
+                Ok(None) => {
+                    info!("No error_log_retention_days setting found, using default: 7");
+                    7
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to fetch error_log_retention_days setting, using default 7: {}",
+                        e
+                    );
+                    7
+                }
+            };
+
+            // Clean up old error logs
+            match cleanup_old_error_logs(&error_pool, retention_days).await {
+                Ok(deleted_count) => {
+                    if deleted_count > 0 {
+                        info!(
+                            "Cleaned up {} old error log entries (retention: {} days)",
+                            deleted_count, retention_days
+                        );
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to cleanup old error logs: {}", e);
+                }
+            }
         }
     });
 }

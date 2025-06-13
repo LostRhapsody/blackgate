@@ -391,6 +391,19 @@ pub async fn store_request_metrics(
 //****                      Health Check Queries                         ****//
 ///////////////////////////////////////////////////////////////////////////////
 
+/// Fetch all route health checks for webhook reporting
+pub async fn fetch_all_health_checks(
+    pool: &SqlitePool,
+) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
+    sqlx::query(
+        "SELECT path, health_check_status, response_time_ms, error_message, checked_at, method_used 
+         FROM route_health_checks 
+         ORDER BY path ASC"
+    )
+    .fetch_all(pool)
+    .await
+}
+
 /// Clear health status for a route by setting it to "Unknown"
 pub async fn clear_route_health_status(
     pool: &SqlitePool,
@@ -407,6 +420,23 @@ pub async fn clear_route_health_status(
     .bind(HealthStatus::Unknown.to_string())
     .bind(HealthCheckMethod::Manual.to_string())
     .execute(pool)
+    .await
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//****                        Error Log Queries                          ****//
+///////////////////////////////////////////////////////////////////////////////
+
+/// Fetch all error logs for webhook reporting, ordered by most recent first
+pub async fn fetch_all_error_logs(
+    pool: &SqlitePool,
+) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
+    sqlx::query(
+        "SELECT id, error_message, severity, context, file_location, line_number, function_name, created_at 
+         FROM error_logs 
+         ORDER BY created_at DESC"
+    )
+    .fetch_all(pool)
     .await
 }
 

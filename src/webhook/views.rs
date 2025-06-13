@@ -1,12 +1,12 @@
 //! # Webhook Views Module
-//! 
+//!
 //! This module provides HTML view generation for webhook responses.
 //! It contains functions to build HTML representations of health checks
 //! and error reports that can be consumed by monitoring services or
 //! displayed in web interfaces.
-//! 
+//!
 //! ## Features
-//! 
+//!
 //! - **Health Check Views**: HTML representation of system health status
 //! - **Error Reporting Views**: HTML formatted error information
 
@@ -17,25 +17,25 @@ use sqlx;
 ///////////////////////////////////////////////////////////////////////////////
 
 /// Builds an HTML view for health check status
-/// 
+///
 /// This function generates an HTML representation of the current system
 /// health status that can be consumed by monitoring services or displayed
 /// in web browsers.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `health_checks` - A slice of SQLite rows containing health check data
-/// 
+///
 /// # Returns
-/// 
+///
 /// A `String` containing the HTML representation of health check data
 pub fn build_health_check_view(health_checks: &[sqlx::sqlite::SqliteRow]) -> String {
     use sqlx::Row;
-    
+
     let mut healthy_count = 0;
     let mut unhealthy_count = 0;
     let mut unknown_count = 0;
-    
+
     // Calculate summary statistics
     for row in health_checks {
         match row.get::<String, _>("health_check_status").as_str() {
@@ -44,47 +44,59 @@ pub fn build_health_check_view(health_checks: &[sqlx::sqlite::SqliteRow]) -> Str
             _ => unknown_count += 1,
         }
     }
-    
+
     let total_routes = health_checks.len();
-    let overall_status = if unhealthy_count > 0 { "Unhealthy" } 
-                        else if unknown_count == total_routes { "Unknown" }
-                        else { "Healthy" };
-    
+    // let overall_status = if unhealthy_count > 0 { "Unhealthy" }
+    //                     else if unknown_count == total_routes { "Unknown" }
+    //                     else { "Healthy" };
+
     // Generate health check rows HTML
-    let health_rows: String = health_checks.iter().map(|row| {
-        let path = row.get::<String, _>("path");
-        let status = row.get::<String, _>("health_check_status");
-        let response_time = row.get::<Option<i64>, _>("response_time_ms")
-            .map(|t| format!("{}ms", t))
-            .unwrap_or_else(|| "N/A".to_string());
-        let error_message = row.get::<Option<String>, _>("error_message")
-            .unwrap_or_else(|| String::new());
-        let checked_at = row.get::<String, _>("checked_at");
-        let method = row.get::<String, _>("method_used");
-        
-        let health_indicator = match status.as_str() {
-            "Healthy" => r#"<span class="health-indicator health-green">●</span>"#,
-            "Unhealthy" => r#"<span class="health-indicator health-red">●</span>"#,
-            _ => r#"<span class="health-indicator health-yellow">●</span>"#,
-        };
-        
-        let error_row = if !error_message.is_empty() && status == "Unhealthy" {
-            format!(r#"<tr class="error-row"><td colspan="5">{}</td></tr>"#, error_message)
-        } else {
-            String::new()
-        };
-        
-        format!(r#"
+    let health_rows: String = health_checks
+        .iter()
+        .map(|row| {
+            let path = row.get::<String, _>("path");
+            let status = row.get::<String, _>("health_check_status");
+            let response_time = row
+                .get::<Option<i64>, _>("response_time_ms")
+                .map(|t| format!("{}ms", t))
+                .unwrap_or_else(|| "N/A".to_string());
+            let error_message = row
+                .get::<Option<String>, _>("error_message")
+                .unwrap_or_else(|| String::new());
+            let checked_at = row.get::<String, _>("checked_at");
+            let method = row.get::<String, _>("method_used");
+
+            let health_indicator = match status.as_str() {
+                "Healthy" => r#"<span class="health-indicator health-green">●</span>"#,
+                "Unhealthy" => r#"<span class="health-indicator health-red">●</span>"#,
+                _ => r#"<span class="health-indicator health-yellow">●</span>"#,
+            };
+
+            let error_row = if !error_message.is_empty() && status == "Unhealthy" {
+                format!(
+                    r#"<tr class="error-row"><td colspan="5">{}</td></tr>"#,
+                    error_message
+                )
+            } else {
+                String::new()
+            };
+
+            format!(
+                r#"
         <tr>
             <td>{}{}</td>
             <td>{}</td>
             <td>{}</td>
             <td>{}</td>
             <td>{}</td>
-        </tr>{}"#, health_indicator, path, status, response_time, method, checked_at, error_row)
-    }).collect();
-    
-    format!(r#"<!DOCTYPE html>
+        </tr>{}"#,
+                health_indicator, path, status, response_time, method, checked_at, error_row
+            )
+        })
+        .collect();
+
+    format!(
+        r#"<!DOCTYPE html>
 <html>
 <head>
     <title>Health Check - Blackgate API Gateway</title>
@@ -163,11 +175,11 @@ pub fn build_health_check_view(health_checks: &[sqlx::sqlite::SqliteRow]) -> Str
         </div>
     </div>
 </body>
-</html>"#, 
+</html>"#,
         match overall_status {
             "Healthy" => "health-green",
             "Unhealthy" => "health-red",
-            _ => "health-yellow"
+            _ => "health-yellow",
         },
         overall_status,
         total_routes,
@@ -179,17 +191,17 @@ pub fn build_health_check_view(health_checks: &[sqlx::sqlite::SqliteRow]) -> Str
 }
 
 /// Builds an HTML view for error reporting
-/// 
+///
 /// This function generates an HTML representation of recent errors
 /// and error statistics that can be consumed by monitoring services
 /// or displayed in web interfaces.
-/// 
+///
 /// # Returns
-/// 
+///
 /// A `String` containing the HTML representation of error report data
-/// 
+///
 /// # TODO
-/// 
+///
 /// Implement the actual error reporting view generation logic
 pub fn build_error_reporting_view() -> String {
     // Placeholder implementation

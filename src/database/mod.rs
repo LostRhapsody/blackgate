@@ -16,18 +16,16 @@
 //! Migrations are stored in code as `Migration` structs, tracked in a `migrations` table.
 //! CLI commands allow creating new migrations, listing pending ones, and applying them.
 
-pub mod queries;
 pub mod backup;
+pub mod queries;
 
-use sqlx::{migrate::MigrateDatabase, sqlite::{SqlitePool, SqlitePoolOptions}, Row, Sqlite};
+use sqlx::{
+    Row, Sqlite,
+    migrate::MigrateDatabase,
+    sqlite::{SqlitePool, SqlitePoolOptions},
+};
 use std::collections::HashMap;
 use tracing::{error, info, warn};
-
-/// Get the database URL from environment variable or use default
-pub fn get_database_url() -> String {
-    std::env::var("BLACKGATE_DB_URL")
-        .unwrap_or_else(|_| "sqlite://blackgate.db".to_string())
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Public Structs                            ****//
@@ -53,20 +51,24 @@ impl DatabaseManager {
     }
 
     /// Connect to the database with optimized connection pool settings
-    pub async fn connect_with_file_creation_optimized(database_url: &str) -> Result<Self, sqlx::Error> {
-        info!("Opening the Black Gate to: {} (with optimized connection pool)", database_url);
+    pub async fn connect_with_file_creation_optimized(
+        database_url: &str,
+    ) -> Result<Self, sqlx::Error> {
+        info!(
+            "Opening the Black Gate to: {} (with optimized connection pool)",
+            database_url
+        );
 
         // Create optimized connection pool
         let pool_options = SqlitePoolOptions::new()
-            .max_connections(20)        // Allow up to 20 concurrent connections
-            .min_connections(5)         // Keep 5 connections warm at all times
-            .acquire_timeout(std::time::Duration::from_secs(5))  // 5 second timeout for acquiring connections
-            .idle_timeout(std::time::Duration::from_secs(300))   // Close idle connections after 5 minutes
+            .max_connections(20) // Allow up to 20 concurrent connections
+            .min_connections(5) // Keep 5 connections warm at all times
+            .acquire_timeout(std::time::Duration::from_secs(5)) // 5 second timeout for acquiring connections
+            .idle_timeout(std::time::Duration::from_secs(300)) // Close idle connections after 5 minutes
             .max_lifetime(std::time::Duration::from_secs(1800)); // Recreate connections every 30 minutes
 
         // if it does not exist, create and apply migrations then leave
         if !Sqlite::database_exists(database_url).await.unwrap_or(false) {
-
             // create
             info!("Database does not exist at {}, creating it", database_url);
             Sqlite::create_database(database_url).await?;
@@ -74,7 +76,10 @@ impl DatabaseManager {
             // check with optimized pool
             let pool = pool_options.connect(database_url).await?;
             sqlx::query("SELECT 1").execute(&pool).await?;
-            info!("Database created successfully at {} with optimized connection pool", database_url);
+            info!(
+                "Database created successfully at {} with optimized connection pool",
+                database_url
+            );
             info!("Initializing migrations table...");
 
             // apply migrations (initialize)
@@ -86,12 +91,14 @@ impl DatabaseManager {
 
             info!("Initial migrations applied successfully.");
             info!("The Black Gate is ready to serve with optimized database performance.");
-            return Ok(db_manager)
+            return Ok(db_manager);
         }
 
         let pool = pool_options.connect(database_url).await?;
         sqlx::query("SELECT 1").execute(&pool).await?;
-        info!("Connected to existing database with optimized pool (max: 20, min: 5, warm connections)");
+        info!(
+            "Connected to existing database with optimized pool (max: 20, min: 5, warm connections)"
+        );
         let db_manager = Self::new(pool);
         db_manager.apply_sqlite_optimizations().await?;
         Ok(db_manager)
@@ -117,7 +124,7 @@ impl DatabaseManager {
                 version INTEGER PRIMARY KEY,
                 name TEXT NOT NULL,
                 applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )"
+            )",
         )
         .execute(&self.pool)
         .await?;
@@ -195,7 +202,7 @@ impl DatabaseManager {
                     INSERT INTO settings (key, value, description) VALUES
                         ('default_rate_limit_per_minute', '0', 'Default rate limit per minute for new routes'),
                         ('default_rate_limit_per_hour', '0', 'Default rate limit per hour for new routes'),
-                        ('health_check_interval_seconds', '60', 'Health check interval in seconds, requries restart');                        
+                        ('health_check_interval_seconds', '60', 'Health check interval in seconds, requries restart');
                 "#.to_string(),
             },
             Migration {
@@ -237,10 +244,10 @@ impl DatabaseManager {
 
                     -- Add collection_id to routes table (nullable for backward compatibility)
                     ALTER TABLE routes ADD COLUMN collection_id INTEGER REFERENCES route_collections(id);
-                    
+
                     -- Create index for faster lookups
                     CREATE INDEX IF NOT EXISTS idx_routes_collection_id ON routes(collection_id);
-                    
+
                     -- Example collections
                     INSERT INTO route_collections (name, description, default_auth_type, default_rate_limit_per_minute, default_rate_limit_per_hour) VALUES
                         ('default', 'Default collection for uncategorized routes', 'none', 60, 1000),
@@ -263,16 +270,16 @@ impl DatabaseManager {
                         error_message TEXT,
                         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                     );
-                    
+
                     -- Create index for faster lookups by status and date
                     CREATE INDEX IF NOT EXISTS idx_backup_history_status ON backup_history(status);
                     CREATE INDEX IF NOT EXISTS idx_backup_history_started_at ON backup_history(started_at);
-                    
+
                     -- Default backup settings
                     INSERT INTO settings (key, value, description) VALUES
                         ('backup_enabled', 'false', 'Enable automated database backups to S3'),
                         ('backup_interval_hours', '24', 'Hours between automated backup runs'),
-                        ('backup_retention_days', '30', 'Days to keep backup files in S3');                    
+                        ('backup_retention_days', '30', 'Days to keep backup files in S3');
                 "#.to_string(),
             },
             Migration {
@@ -282,7 +289,7 @@ impl DatabaseManager {
                     -- Default response cache settings
                     INSERT INTO settings (key, value, description)
                     VALUES ('response_cache_default_ttl', '15', 'Default TTL in seconds for response cache entries')
-                    ON CONFLICT(key) DO UPDATE SET 
+                    ON CONFLICT(key) DO UPDATE SET
                         value = EXCLUDED.value,
                         description = EXCLUDED.description,
                         updated_at = CURRENT_TIMESTAMP;
@@ -329,17 +336,26 @@ impl DatabaseManager {
 
         for migration in migrations {
             if !applied_migrations.contains_key(&migration.version) {
-                info!("Applying migration {}: {}", migration.version, migration.name);
-                sqlx::query(&migration.sql).execute(&self.pool).await.map_err(|e| {
-                    error!("Failed to apply migration {}: {}", migration.version, e);
-                    e
-                })?;
+                info!(
+                    "Applying migration {}: {}",
+                    migration.version, migration.name
+                );
+                sqlx::query(&migration.sql)
+                    .execute(&self.pool)
+                    .await
+                    .map_err(|e| {
+                        error!("Failed to apply migration {}: {}", migration.version, e);
+                        e
+                    })?;
                 sqlx::query("INSERT INTO migrations (version, name) VALUES (?, ?)")
                     .bind(migration.version)
                     .bind(&migration.name)
                     .execute(&self.pool)
                     .await?;
-                info!("Applied migration {}: {}", migration.version, migration.name);
+                info!(
+                    "Applied migration {}: {}",
+                    migration.version, migration.name
+                );
             }
         }
         Ok(())
@@ -358,14 +374,20 @@ impl DatabaseManager {
             return Err(format!("Migration {} already applied", version).into());
         }
 
-        info!("Applying migration {}: {}", migration.version, migration.name);
+        info!(
+            "Applying migration {}: {}",
+            migration.version, migration.name
+        );
         sqlx::query(&migration.sql).execute(&self.pool).await?;
         sqlx::query("INSERT INTO migrations (version, name) VALUES (?, ?)")
             .bind(migration.version)
             .bind(&migration.name)
             .execute(&self.pool)
             .await?;
-        info!("Applied migration {}: {}", migration.version, migration.name);
+        info!(
+            "Applied migration {}: {}",
+            migration.version, migration.name
+        );
         Ok(())
     }
 
@@ -383,15 +405,14 @@ impl DatabaseManager {
     /// Warm up the connection pool by creating and testing connections
     pub async fn warm_connection_pool(&self) -> Result<(), sqlx::Error> {
         info!("Warming up database connection pool...");
-        
+
         // Create several connections in parallel to warm up the pool
         let mut handles = Vec::new();
-        for i in 0..5 {  // Warm up 5 connections (our min_connections setting)
+        for i in 0..5 {
+            // Warm up 5 connections (our min_connections setting)
             let pool = self.pool.clone();
             let handle = tokio::spawn(async move {
-                let result = sqlx::query("SELECT 1 as warm_check")
-                    .fetch_one(&pool)
-                    .await;
+                let result = sqlx::query("SELECT 1 as warm_check").fetch_one(&pool).await;
                 match result {
                     Ok(_) => tracing::debug!("Warm connection {} ready", i),
                     Err(e) => tracing::warn!("Failed to warm connection {}: {}", i, e),
@@ -399,7 +420,7 @@ impl DatabaseManager {
             });
             handles.push(handle);
         }
-        
+
         // Wait for all connections to be warmed up
         let mut successful = 0;
         for handle in handles {
@@ -407,8 +428,11 @@ impl DatabaseManager {
                 successful += 1;
             }
         }
-        
-        info!("Database connection pool warmed up: {}/5 connections ready", successful);
+
+        info!(
+            "Database connection pool warmed up: {}/5 connections ready",
+            successful
+        );
         Ok(())
     }
 
@@ -421,25 +445,35 @@ impl DatabaseManager {
     /// Apply SQLite performance optimizations
     async fn apply_sqlite_optimizations(&self) -> Result<(), sqlx::Error> {
         info!("Applying SQLite performance optimizations...");
-        
+
         // Enable WAL mode for better concurrency
-        sqlx::query("PRAGMA journal_mode = WAL").execute(&self.pool).await?;
-        
+        sqlx::query("PRAGMA journal_mode = WAL")
+            .execute(&self.pool)
+            .await?;
+
         // Optimize synchronous mode for better performance
-        sqlx::query("PRAGMA synchronous = NORMAL").execute(&self.pool).await?;
-        
+        sqlx::query("PRAGMA synchronous = NORMAL")
+            .execute(&self.pool)
+            .await?;
+
         // Increase cache size (negative value means KB, positive means pages)
-        sqlx::query("PRAGMA cache_size = -64000").execute(&self.pool).await?; // 64MB cache
-        
+        sqlx::query("PRAGMA cache_size = -64000")
+            .execute(&self.pool)
+            .await?; // 64MB cache
+
         // Optimize temp storage
-        sqlx::query("PRAGMA temp_store = MEMORY").execute(&self.pool).await?;
-        
+        sqlx::query("PRAGMA temp_store = MEMORY")
+            .execute(&self.pool)
+            .await?;
+
         // Set busy timeout to handle concurrent access
-        sqlx::query("PRAGMA busy_timeout = 5000").execute(&self.pool).await?; // 5 seconds
-        
+        sqlx::query("PRAGMA busy_timeout = 5000")
+            .execute(&self.pool)
+            .await?; // 5 seconds
+
         // Enable query optimization
         sqlx::query("PRAGMA optimize").execute(&self.pool).await?;
-        
+
         info!("SQLite performance optimizations applied successfully");
         Ok(())
     }
@@ -507,7 +541,11 @@ impl MigrationCli {
                     "\t{}: {} ({})",
                     column.get::<String, _>("name"),
                     column.get::<String, _>("type"),
-                    if column.get::<i64, _>("pk") > 0 { "PK" } else { "" }
+                    if column.get::<i64, _>("pk") > 0 {
+                        "PK"
+                    } else {
+                        ""
+                    }
                 );
             }
         }

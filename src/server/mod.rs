@@ -39,6 +39,7 @@ use crate::auth::oauth::OAuthTokenCache;
 use crate::cache::ResponseCache;
 use crate::database::backup::BackupManager;
 use crate::database::queries::get_setting_by_key;
+use crate::env::AppConfig;
 use crate::health::HealthChecker;
 use crate::rate_limiter::RateLimiter;
 use crate::routing::router::create_router;
@@ -53,7 +54,7 @@ use tracing::{error, info, warn};
 ///////////////////////////////////////////////////////////////////////////////
 
 /// Start the API gateway server with graceful shutdown support
-pub async fn start_server(pool: SqlitePool) {
+pub async fn start_server(pool: SqlitePool, config: AppConfig) {
     let shutdown_coordinator = Arc::new(ShutdownCoordinator::new());
 
     let token_cache = Arc::new(Mutex::new(OAuthTokenCache::new()));
@@ -88,10 +89,12 @@ pub async fn start_server(pool: SqlitePool) {
     )
     .await;
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    let listener = tokio::net::TcpListener::bind(config.bind_address)
+        .await
+        .unwrap();
     let addr = listener.local_addr().unwrap();
     info!("Black Gate running on http://{}", addr);
-    info!("Web interface: http://localhost:3000/");
+    info!("Web interface: http://{}:{}/", config.host, config.port);
 
     // Start the server with graceful shutdown
     let shutdown_for_server = shutdown_coordinator.clone();
@@ -111,6 +114,7 @@ pub async fn start_server(pool: SqlitePool) {
 /// Start the API gateway server with graceful shutdown support, used for oAuth testing
 pub async fn start_server_with_shutdown(
     pool: SqlitePool,
+    config: AppConfig,
     shutdown_rx: tokio::sync::oneshot::Receiver<()>,
 ) {
     let token_cache = Arc::new(Mutex::new(OAuthTokenCache::new()));
@@ -158,7 +162,9 @@ pub async fn start_server_with_shutdown(
         }
     });
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    let listener = tokio::net::TcpListener::bind(config.bind_address)
+        .await
+        .unwrap();
     let addr = listener.local_addr().unwrap();
     info!("Black Gate running on http://{}", addr);
 
@@ -174,7 +180,7 @@ pub async fn start_server_with_shutdown(
 }
 
 /// Start the OAuth test server and the main Black Gate server, used for oAuth testing
-pub async fn start_oauth_test_server(pool: SqlitePool, _port: u16) {
+pub async fn start_oauth_test_server(pool: SqlitePool, config: AppConfig, _port: u16) {
     let (_addr, oauth_shutdown_tx) = crate::oauth_test_server::spawn_oauth_test_server().await;
 
     // Create shutdown channel for the main server
@@ -182,8 +188,9 @@ pub async fn start_oauth_test_server(pool: SqlitePool, _port: u16) {
 
     // Start the main Black Gate server with graceful shutdown
     let server_pool = pool.clone();
+    let server_config = config.clone();
     let server_handle = tokio::spawn(async move {
-        start_server_with_shutdown(server_pool, server_shutdown_rx).await;
+        start_server_with_shutdown(server_pool, server_config, server_shutdown_rx).await;
     });
 
     // Wait for Ctrl+C signal

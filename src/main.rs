@@ -19,6 +19,7 @@ mod cli;
 mod database;
 mod env;
 mod health;
+mod logging;
 mod metrics;
 mod oauth_test_server;
 mod open_api;
@@ -42,6 +43,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
 use tracing::info;
+use logging::errors::{log_error_async, ErrorSeverity, ErrorContext};
 
 /// Application state shared across routes, contains DB pool and token cache
 #[derive(Clone)]
@@ -57,6 +59,7 @@ struct AppState {
 
 #[tokio::main]
 async fn main() {
+
     // Validate environment variables before starting
     let validation_result = env::validate_environment();
 
@@ -100,6 +103,20 @@ async fn main() {
     let pool = initialize_database(&config.database_url)
         .await
         .expect("Failed to initialize database");
+
+    // throw an error for testing
+    let context = ErrorContext::new()
+        .with_route("/api/test".to_string())
+        .with_method("GET".to_string());
+    log_error_async(
+        &pool,
+        ErrorSeverity::Error,
+        "I'm just a fake error!".to_string(),
+        Some(context),
+        file!(),
+        line!(),
+        Some("Main".to_string())
+    ).await;
 
     cli::parse_cli_commands(Arc::new(&pool)).await;
 }

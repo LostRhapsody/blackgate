@@ -30,7 +30,8 @@ impl ShutdownCoordinator {
         }
     }
 
-    /// Check if shutdown has been initiated
+    /// Check if shutdown has been initiated (used in test module)
+    #[allow(dead_code)]
     pub fn is_shutdown_initiated(&self) -> bool {
         self.shutdown_initiated.load(Ordering::Relaxed)
     }
@@ -118,6 +119,8 @@ impl ShutdownAwareTask {
     }
 
     /// Check if shutdown has been requested
+    /// used in test module
+    #[allow(dead_code)]
     pub fn should_shutdown(&mut self) -> bool {
         matches!(self.shutdown_rx.try_recv(), Ok(_))
     }

@@ -32,6 +32,7 @@
 //! - `s3_endpoint`: Custom S3 endpoint (optional, for S3-compatible services)
 
 use crate::database::queries;
+use crate::server::shutdown::{ShutdownAwareTask, ShutdownCoordinator};
 use chrono::{DateTime, Utc};
 use flate2::Compression;
 use flate2::write::GzEncoder;
@@ -159,6 +160,64 @@ impl BackupManager {
                 tokio::time::sleep(sleep_duration).await;
             }
         });
+    }
+
+    /// Start the backup background task with graceful shutdown support
+    pub async fn start_background_backups_with_shutdown(
+        self,
+        shutdown_coordinator: Arc<ShutdownCoordinator>,
+    ) {
+        let manager = Arc::new(self);
+        let mut shutdown_task = ShutdownAwareTask::new(&shutdown_coordinator);
+
+        info!("Starting database backup background task");
+
+        loop {
+            // Load configuration from database
+            let config = match manager.load_backup_config().await {
+                Ok(config) => config,
+                Err(e) => {
+                    error!("Failed to load backup configuration: {}", e);
+                    // Wait 1 hour before retrying, or shutdown if requested
+                    if shutdown_task
+                        .wait_or_shutdown(Duration::from_secs(3600))
+                        .await
+                    {
+                        info!("Database backup background task shutting down");
+                        break;
+                    }
+                    continue;
+                }
+            };
+
+            if !config.enabled {
+                debug!("Database backups are disabled, sleeping for 1 hour");
+                if shutdown_task
+                    .wait_or_shutdown(Duration::from_secs(3600))
+                    .await
+                {
+                    info!("Database backup background task shutting down");
+                    break;
+                }
+                continue;
+            }
+
+            debug!(
+                "Running database backup check with {} hour intervals",
+                config.interval_hours
+            );
+
+            if let Err(e) = manager.run_backup(&config).await {
+                error!("Database backup cycle failed: {}", e);
+            }
+
+            // Sleep until next backup interval or shutdown
+            let sleep_duration = Duration::from_secs(config.interval_hours * 3600);
+            if shutdown_task.wait_or_shutdown(sleep_duration).await {
+                info!("Database backup background task shutting down");
+                break;
+            }
+        }
     }
 
     /// Run a single backup operation

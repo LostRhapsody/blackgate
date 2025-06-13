@@ -31,6 +31,9 @@
 //! start_oauth_test_server(pool, 8080).await;
 //! ```
 
+pub mod shutdown;
+
+use self::shutdown::ShutdownCoordinator;
 use crate::AppState;
 use crate::auth::oauth::OAuthTokenCache;
 use crate::cache::ResponseCache;
@@ -49,8 +52,10 @@ use tracing::{error, info, warn};
 //****                       Public Functions                            ****//
 ///////////////////////////////////////////////////////////////////////////////
 
-/// Start the API gateway server, waits for incoming requests
+/// Start the API gateway server with graceful shutdown support
 pub async fn start_server(pool: SqlitePool) {
+    let shutdown_coordinator = Arc::new(ShutdownCoordinator::new());
+
     let token_cache = Arc::new(Mutex::new(OAuthTokenCache::new()));
     let rate_limiter = Arc::new(Mutex::new(RateLimiter::new()));
     let route_cache = Arc::new(RwLock::new(HashMap::new()));
@@ -75,31 +80,32 @@ pub async fn start_server(pool: SqlitePool) {
 
     let app = create_router(app_state);
 
-    // Create a new health checker for the background service Start the health check background service
-    let background_health_checker = HealthChecker::new(Arc::new(pool.clone()));
-    background_health_checker.start_background_checks();
-
-    // Start the database backup background service
-    let backup_manager = BackupManager::new(Arc::new(pool.clone()));
-    backup_manager.start_background_backups();
-
-    // Create a new response cache for the background service
-    let background_response_cache = Arc::new(ResponseCache::new(default_ttl));
-
-    // Start background task to clean up expired cache entries
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60)); // Run every minute
-        loop {
-            interval.tick().await;
-            background_response_cache.cleanup().await;
-        }
-    });
+    // Start background services with shutdown awareness
+    start_background_services(
+        Arc::new(pool.clone()),
+        default_ttl,
+        shutdown_coordinator.clone(),
+    )
+    .await;
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     let addr = listener.local_addr().unwrap();
     info!("Black Gate running on http://{}", addr);
     info!("Web interface: http://localhost:3000/");
-    axum::serve(listener, app).await.unwrap();
+
+    // Start the server with graceful shutdown
+    let shutdown_for_server = shutdown_coordinator.clone();
+    let server = axum::serve(listener, app).with_graceful_shutdown(async move {
+        shutdown_for_server.wait_for_shutdown_signal().await;
+    });
+
+    if let Err(err) = server.await {
+        error!("Black Gate server error: {}", err);
+    }
+
+    // Wait for background tasks to complete
+    shutdown_coordinator.wait_for_tasks_completion(10).await;
+    info!("Black Gate shutdown complete");
 }
 
 /// Start the API gateway server with graceful shutdown support, used for oAuth testing
@@ -229,4 +235,52 @@ fn get_response_cache_default_ttl(pool: &SqlitePool) -> u64 {
         }
     };
     default_ttl
+}
+
+/// Start all background services with shutdown awareness
+async fn start_background_services(
+    pool: Arc<SqlitePool>,
+    response_cache_ttl: u64,
+    shutdown_coordinator: Arc<ShutdownCoordinator>,
+) {
+    // Start health check background service
+    let health_pool = pool.clone();
+    let health_shutdown = shutdown_coordinator.clone();
+    tokio::spawn(async move {
+        let health_checker = HealthChecker::new(health_pool);
+        health_checker
+            .start_background_checks_with_shutdown(health_shutdown)
+            .await;
+    });
+
+    // Start database backup background service
+    let backup_pool = pool.clone();
+    let backup_shutdown = shutdown_coordinator.clone();
+    tokio::spawn(async move {
+        let backup_manager = BackupManager::new(backup_pool);
+        backup_manager
+            .start_background_backups_with_shutdown(backup_shutdown)
+            .await;
+    });
+
+    // Start response cache cleanup background service
+    let cache_shutdown = shutdown_coordinator.clone();
+    tokio::spawn(async move {
+        let response_cache = Arc::new(ResponseCache::new(response_cache_ttl));
+        let mut shutdown_task = shutdown::ShutdownAwareTask::new(&cache_shutdown);
+
+        info!("Starting response cache cleanup background service");
+        loop {
+            // Wait for 60 seconds or shutdown signal
+            if shutdown_task
+                .wait_or_shutdown(tokio::time::Duration::from_secs(60))
+                .await
+            {
+                info!("Response cache cleanup service shutting down");
+                break;
+            }
+
+            response_cache.cleanup().await;
+        }
+    });
 }

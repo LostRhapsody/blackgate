@@ -391,6 +391,19 @@ pub async fn store_request_metrics(
 //****                      Health Check Queries                         ****//
 ///////////////////////////////////////////////////////////////////////////////
 
+/// Fetch all route health checks for webhook reporting
+pub async fn fetch_all_health_checks(
+    pool: &SqlitePool,
+) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
+    sqlx::query(
+        "SELECT path, health_check_status, response_time_ms, error_message, checked_at, method_used 
+         FROM route_health_checks 
+         ORDER BY path ASC"
+    )
+    .fetch_all(pool)
+    .await
+}
+
 /// Clear health status for a route by setting it to "Unknown"
 pub async fn clear_route_health_status(
     pool: &SqlitePool,

@@ -16,7 +16,9 @@ use axum::{
 };
 use serde_json::{json, Value};
 use crate::AppState;
+use crate::database::queries;
 use super::views;
+use chrono;
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                       Public Functions                            ****//
@@ -34,14 +36,15 @@ use super::views;
 /// # Returns
 /// 
 /// An `Html<String>` response containing the health check view
-/// 
-/// # TODO
-/// 
-/// Implement actual health check data retrieval from application state
 pub async fn handle_health_check_view(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
 ) -> Html<String> {
-    let html_content = views::build_health_check_view();
+    // Fetch health check data from database
+    let health_checks = queries::fetch_all_health_checks(&state.db)
+        .await
+        .unwrap_or_else(|_| Vec::new());
+    
+    let html_content = views::build_health_check_view(&health_checks);
     Html(html_content)
 }
 
@@ -80,30 +83,40 @@ pub async fn handle_error_reporting_view(
 /// # Returns
 /// 
 /// A `Json<Value>` response containing health check data in JSON format
-/// 
-/// # TODO
-/// 
-/// Implement actual health check data retrieval and JSON serialization
 pub async fn handle_health_check_json(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
 ) -> Json<Value> {
-    // Placeholder JSON response
-    let health_data = json!({
-        "status": "healthy",
-        "timestamp": "2025-06-13T00:00:00Z",
-        "services": {
-            "database": "healthy",
-            "cache": "healthy",
-            "api_gateway": "healthy"
+    use sqlx::Row;
+    
+    // Fetch health check data from database
+    let health_checks = queries::fetch_all_health_checks(&state.db)
+        .await
+        .unwrap_or_else(|_| Vec::new());
+    
+    // Convert to JSON format
+    let health_data: Vec<Value> = health_checks.iter().map(|row| {
+        json!({
+            "path": row.get::<String, _>("path"),
+            "status": row.get::<String, _>("health_check_status"),
+            "response_time_ms": row.get::<Option<i64>, _>("response_time_ms"),
+            "error_message": row.get::<Option<String>, _>("error_message"),
+            "checked_at": row.get::<String, _>("checked_at"),
+            "method_used": row.get::<String, _>("method_used")
+        })
+    }).collect();
+    
+    let response_data = json!({
+        "summary": {
+            "total_routes": health_data.len(),
+            "healthy_routes": health_data.iter().filter(|h| h["status"] == "Healthy").count(),
+            "unhealthy_routes": health_data.iter().filter(|h| h["status"] == "Unhealthy").count(),
+            "unknown_routes": health_data.iter().filter(|h| h["status"] == "Unknown").count(),
+            "last_updated": chrono::Utc::now().to_rfc3339()
         },
-        "metrics": {
-            "uptime_seconds": 3600,
-            "total_requests": 1234,
-            "active_connections": 42
-        }
+        "health_checks": health_data
     });
     
-    Json(health_data)
+    Json(response_data)
 }
 
 /// Handles error reporting JSON requests

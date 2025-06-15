@@ -19,6 +19,7 @@ mod cli;
 mod database;
 mod env;
 mod health;
+mod logging;
 mod metrics;
 mod oauth_test_server;
 mod open_api;
@@ -26,6 +27,7 @@ mod rate_limiter;
 mod routing;
 mod server;
 mod web;
+mod webhook;
 
 #[cfg(test)]
 mod tests;
@@ -41,6 +43,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
 use tracing::info;
+use logging::errors::{log_error_async, ErrorSeverity, ErrorContext};
 
 /// Application state shared across routes, contains DB pool and token cache
 #[derive(Clone)]
@@ -56,6 +59,7 @@ struct AppState {
 
 #[tokio::main]
 async fn main() {
+
     // Validate environment variables before starting
     let validation_result = env::validate_environment();
 

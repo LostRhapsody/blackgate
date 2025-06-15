@@ -295,6 +295,35 @@ impl DatabaseManager {
                         updated_at = CURRENT_TIMESTAMP;
                 "#.to_string(),
             },
+            Migration {
+                version: 5,
+                name: "error_logging".to_string(),
+                sql: r#"
+                    -- Error logging table
+                    CREATE TABLE IF NOT EXISTS error_logs (
+                        id TEXT PRIMARY KEY,
+                        error_message TEXT NOT NULL,
+                        severity TEXT NOT NULL,
+                        context TEXT,
+                        file_location TEXT,
+                        line_number INTEGER,
+                        function_name TEXT,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    );
+
+                    -- Create index for faster lookups by severity and date
+                    CREATE INDEX IF NOT EXISTS idx_error_logs_severity ON error_logs(severity);
+                    CREATE INDEX IF NOT EXISTS idx_error_logs_created_at ON error_logs(created_at);
+
+                    -- Default error log retention setting
+                    INSERT INTO settings (key, value, description)
+                    VALUES ('error_log_retention_days', '7', 'Days to keep error log entries in database')
+                    ON CONFLICT(key) DO UPDATE SET
+                        value = EXCLUDED.value,
+                        description = EXCLUDED.description,
+                        updated_at = CURRENT_TIMESTAMP;
+                "#.to_string(),
+            },
         ]
     }
 

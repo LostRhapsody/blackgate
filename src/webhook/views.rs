@@ -146,7 +146,7 @@ pub fn build_health_check_view(health_checks: &[sqlx::sqlite::SqliteRow]) -> Str
                 <h2>Health Check Summary</h2>
                 <span class="health-indicator {}">Overall Status: {}</span>
             </div>
-            
+
             <div class="stats-grid">
                 <div class="stat-item">
                     <label>Total Routes</label>
@@ -223,7 +223,8 @@ pub fn build_error_reporting_view(error_logs: &[sqlx::sqlite::SqliteRow]) -> Str
     // Generate error log rows HTML
     let error_rows: String = if error_logs.is_empty() {
         r#"<tr><td colspan="4" class="no-data">No error logs found</td></tr>"#.to_string()
-    } else {        error_logs
+    } else {
+        error_logs
             .iter()
             .map(|row| {
                 let id = row.get::<String, _>("id");
@@ -279,9 +280,9 @@ pub fn build_error_reporting_view(error_logs: &[sqlx::sqlite::SqliteRow]) -> Str
                     <td>{}</td>
                 </tr>{}"#,
                     &id[..8], // Show first 8 chars of UUID for brevity
-                    display_message, 
+                    display_message,
                     severity,
-                    created_at, 
+                    created_at,
                     r#"<button onclick="toggleDetails(this)">Details</button>"#,
                     details_row
                 )
@@ -290,40 +291,17 @@ pub fn build_error_reporting_view(error_logs: &[sqlx::sqlite::SqliteRow]) -> Str
     };
 
     format!(
-        r#"<!DOCTYPE html>
-<html>
+        r#"
 <head>
     <title>Error Report - Blackgate API Gateway</title>
     <meta charset="utf-8">
     <link rel="stylesheet" href="/static/css/styles.css">
-    <script>
-        function toggleDetails(button) {{
-            const row = button.closest('tr');
-            const detailsRow = row.nextElementSibling;
-            if (detailsRow && detailsRow.classList.contains('error-details-row')) {{
-                if (detailsRow.style.display === 'none') {{
-                    detailsRow.style.display = '';
-                    button.textContent = 'Hide';
-                }} else {{
-                    detailsRow.style.display = 'none';
-                    button.textContent = 'Details';
-                }}
-            }}
-        }}
-    </script>
 </head>
 <body>
     <nav>
         <div class="nav-header">
-            <h1>Blackgate API Gateway - Error Report</h1>
+            <h2>Blackgate API Gateway - Error Report</h2>
             <div class="header-links">
-                <a href="/" class="header-link">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-                        <polyline points="9,22 9,12 15,12 15,22"/>
-                    </svg>
-                    Dashboard
-                </a>
                 <a href="/webhooks/errors/json" class="header-link">
                     <svg viewBox="0 0 24 24" fill="currentColor">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -344,7 +322,7 @@ pub fn build_error_reporting_view(error_logs: &[sqlx::sqlite::SqliteRow]) -> Str
                 <h2>Error Log Summary</h2>
                 <span class="health-indicator {}">Total Errors: {}</span>
             </div>
-            
+
             <div class="stats-grid">
                 <div class="stat-item">
                     <label>Total Error Logs</label>
@@ -377,11 +355,29 @@ pub fn build_error_reporting_view(error_logs: &[sqlx::sqlite::SqliteRow]) -> Str
 </body>
 </html>"#,
         // Color coding based on error count
-        if total_errors == 0 { "health-green" } else if total_errors <= 10 { "health-yellow" } else { "health-red" },
+        if total_errors == 0 {
+            "health-green"
+        } else if total_errors <= 10 {
+            "health-yellow"
+        } else {
+            "health-red"
+        },
         total_errors,
         total_errors,
-        if total_errors == 0 { "health-green" } else if total_errors <= 10 { "health-yellow" } else { "health-red" },
-        if total_errors == 0 { "No Errors" } else if total_errors <= 10 { "Few Errors" } else { "Many Errors" },
+        if total_errors == 0 {
+            "health-green"
+        } else if total_errors <= 10 {
+            "health-yellow"
+        } else {
+            "health-red"
+        },
+        if total_errors == 0 {
+            "No Errors"
+        } else if total_errors <= 10 {
+            "Few Errors"
+        } else {
+            "Many Errors"
+        },
         error_rows
     )
 }

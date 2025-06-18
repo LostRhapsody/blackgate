@@ -73,7 +73,7 @@ pub fn build_health_check_view(health_checks: &[sqlx::sqlite::SqliteRow]) -> Str
                 .unwrap_or_else(|| "N/A".to_string());
             let error_message = row
                 .get::<Option<String>, _>("error_message")
-                .unwrap_or_else(|| String::new());
+                .unwrap_or_else(String::new);
             let checked_at = row.get::<String, _>("checked_at");
             let method = row.get::<String, _>("method_used");
 

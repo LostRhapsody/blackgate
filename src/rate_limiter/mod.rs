@@ -64,7 +64,7 @@ impl RateLimiter {
         let requests = self
             .requests
             .entry(key.to_string())
-            .or_insert_with(Vec::new);
+            .or_default();
 
         // Remove requests older than 1 hour
         requests.retain(|&timestamp| now.duration_since(timestamp) < Duration::from_secs(3600));

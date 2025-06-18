@@ -102,7 +102,7 @@ pub fn validate_jwt_token(
     let token_data = decode::<JwtClaims>(token, &decoding_key, &validation)?;
     let claims = token_data.claims;
 
-    let check_claims = jwt_config.required_claims.len() > 0 && jwt_config.required_claims[0] != "";
+    let check_claims = !jwt_config.required_claims.is_empty() && !jwt_config.required_claims[0].is_empty();
 
     // Validate required claims if specified
     if check_claims {

@@ -288,7 +288,7 @@ enum CollectionAction {
 //****                       Public Functions                            ****//
 ///////////////////////////////////////////////////////////////////////////////
 
-pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
+pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) {
     // Get validated configuration for server commands
     let config = crate::env::get_config();
     // Parse CLI commands
@@ -598,7 +598,7 @@ pub async fn parse_cli_commands(pool: Arc<&SqlitePool>) -> () {
                         let time_str = response_time
                             .map(|t| format!("{}ms", t))
                             .unwrap_or_else(|| "N/A".to_string());
-                        let error_str = error_message.unwrap_or_else(|| "".to_string());
+                        let error_str = error_message.unwrap_or_default();
                         let error_display = if error_str.len() > 50 {
                             format!("{}...", &error_str[..47])
                         } else {

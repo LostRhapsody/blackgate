@@ -420,7 +420,7 @@ impl HealthChecker {
         if response.status().is_success() {
             Ok(HealthStatus::Healthy)
         } else if response.status().as_u16() == 405 {
-            Err(format!("405 Method Not Allowed").into())
+            Err("405 Method Not Allowed".to_string().into())
         } else {
             Ok(HealthStatus::Unhealthy)
         }
@@ -596,7 +596,7 @@ impl HealthChecker {
         .bind(result.response_time_ms.map(|t| t as i64))
         .bind(&result.error_message)
         .bind(result.checked_at.to_rfc3339())
-        .bind(&result.method_used.to_string())
+        .bind(result.method_used.to_string())
         .execute(self.db_pool.as_ref())
         .await?;
 

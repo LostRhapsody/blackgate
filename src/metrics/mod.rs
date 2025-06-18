@@ -140,10 +140,10 @@ pub fn store_metrics(pool: SqlitePool, metrics: RequestMetrics) {
             metrics.request_size_bytes,
             metrics.response_size_bytes,
             metrics.response_status_code,
-            &metrics.upstream_url.as_deref().unwrap_or(""),
+            metrics.upstream_url.as_deref().unwrap_or(""),
             &metrics.auth_type,
-            &metrics.client_ip.as_deref().unwrap_or(""),
-            &metrics.user_agent.as_deref().unwrap_or(""),
+            metrics.client_ip.as_deref().unwrap_or(""),
+            metrics.user_agent.as_deref().unwrap_or(""),
             metrics.error_message.as_deref(),
         )
         .await;

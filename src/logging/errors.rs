@@ -256,7 +256,7 @@ pub async fn cleanup_old_error_logs(
 ) -> Result<u64, sqlx::Error> {
     let cutoff_date = Utc::now()
         .checked_sub_signed(chrono::Duration::days(retention_days as i64))
-        .unwrap_or_else(|| Utc::now())
+        .unwrap_or_else(Utc::now)
         .to_rfc3339();
 
     let result = sqlx::query("DELETE FROM error_logs WHERE created_at < ?")

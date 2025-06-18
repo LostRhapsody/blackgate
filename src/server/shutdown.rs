@@ -122,7 +122,7 @@ impl ShutdownAwareTask {
     /// used in test module
     #[allow(dead_code)]
     pub fn should_shutdown(&mut self) -> bool {
-        matches!(self.shutdown_rx.try_recv(), Ok(_))
+        self.shutdown_rx.try_recv().is_ok()
     }
 
     /// Wait for either a shutdown signal or the specified duration

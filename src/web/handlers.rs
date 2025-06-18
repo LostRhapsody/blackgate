@@ -177,15 +177,13 @@ pub async fn toggle_collection_fields(
             Ok(servers) => {
                 if servers.is_empty() {
                     // No servers defined - show manual input with message
-                    format!(
-                        r##"
+                    r##"
                         <div>
                             <label for="base_upstream_url">Base Upstream URL:</label><br>
                             <input type="url" id="base_upstream_url" name="base_upstream_url" placeholder="https://api.example.com" required>
                             <small style="color: orange;"><em>No upstream servers are defined in the OpenAPI document, please provide a base URL for this collection to use for its paths</em></small>
                         </div>
-                    "##
-                    )
+                    "##.to_string()
                 } else if servers.len() == 1 {
                     // Single server - auto-select it
                     let server = &servers[0];
@@ -231,28 +229,24 @@ pub async fn toggle_collection_fields(
             Err(e) => {
                 warn!("Failed to fetch servers from OpenAPI spec: {}", e);
                 // Fallback to manual input
-                format!(
-                    r##"
+                r##"
                     <div>
                         <label for="base_upstream_url">Base Upstream URL:</label><br>
                         <input type="url" id="base_upstream_url" name="base_upstream_url" placeholder="https://api.example.com" required>
                         <small style="color: orange;"><em>Could not fetch server information from OpenAPI spec, please provide a base URL manually</em></small>
                     </div>
-                "##
-                )
+                "##.to_string()
             }
         }
     } else {
         // Manual mode - show normal input
-        format!(
-            r##"
+        r##"
             <div>
                 <label for="base_upstream_url">Base Upstream URL:</label><br>
                 <input type="url" id="base_upstream_url" name="base_upstream_url" placeholder="https://api.example.com" required>
                 <small>Base URL that will be prepended to all route paths</small>
             </div>
-        "##
-        )
+        "##.to_string()
     };
 
     let html = format!(
@@ -636,7 +630,7 @@ pub async fn trigger_route_health_check(
                         health_result.response_time_ms.unwrap_or(0),
                         health_result.method_used.to_string()
                     );
-                    return Ok(routes_list(State(state)).await);
+                    Ok(routes_list(State(state)).await)
                 }
                 Err(e) => {
                     error!("Health check failed for route {}: {}", route[0].path, e);

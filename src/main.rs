@@ -35,7 +35,6 @@ use crate::cache::ResponseCache;
 use auth::{oauth::OAuthTokenCache, types::AuthType};
 use database::initialize_database;
 use health::HealthChecker;
-use logging::errors::{ErrorContext, ErrorSeverity, log_error_async};
 use metrics::RequestMetrics;
 use rate_limiter::RateLimiter;
 use routing::handlers::RouteConfig;

@@ -216,7 +216,7 @@ pub async fn start_oauth_test_server(pool: SqlitePool, config: AppConfig, _port:
 }
 
 fn get_response_cache_default_ttl(pool: &SqlitePool) -> u64 {
-    let default_ttl: u64 = match get_setting_by_key(&pool, "response_cache_default_ttl") {
+    let default_ttl: u64 = match get_setting_by_key(pool, "response_cache_default_ttl") {
         Ok(Some(row)) => {
             let value_str: String = row.get("value");
             value_str.parse().unwrap_or_else(|e| {

@@ -392,7 +392,7 @@ impl BackupManager {
     /// Extract timestamp from S3 key
     fn extract_timestamp_from_key(&self, key: &str) -> Option<String> {
         // Extract timestamp from key like "backups/blackgate-backup-20231215_143022.db.gz"
-        if let Some(filename) = key.split('/').last() {
+        if let Some(filename) = key.split('/').next_back() {
             if let Some(timestamp_part) = filename.strip_prefix(&format!("{}-", BACKUP_FILE_PREFIX))
             {
                 if let Some(timestamp) = timestamp_part.strip_suffix(".db.gz") {

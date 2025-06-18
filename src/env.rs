@@ -134,7 +134,7 @@ pub fn validate_environment() -> Result<AppConfig, Vec<EnvValidationError>> {
     });
 
     // Validate host is a valid IP address
-    if let Err(_) = IpAddr::from_str(&host) {
+    if IpAddr::from_str(&host).is_err() {
         errors.push(EnvValidationError {
             variable: "BLACKGATE_HOST".to_string(),
             message: format!("Invalid IP address: {}", host),
@@ -381,8 +381,7 @@ pub fn print_validation_results(result: &Result<AppConfig, Vec<EnvValidationErro
 
 /// Generate example environment configuration file
 pub fn generate_env_example() -> String {
-    format!(
-        r#"# Black Gate API Gateway Environment Configuration
+    r#"# Black Gate API Gateway Environment Configuration
 # Copy this file to .env and customize the values for your deployment
 
 # =============================================================================
@@ -491,8 +490,7 @@ BLACKGATE_BACKUP_INTERVAL_HOURS=24
 
 # AWS profile (if using AWS CLI profiles)
 # AWS_PROFILE=blackgate-profile
-"#
-    )
+"#.to_string()
 }
 
 /// Helper function to parse environment variable with default value

@@ -1,5 +1,5 @@
 //! OIDC (OpenID Connect) authentication module for token validation and discovery.
-//! 
+//!
 //! Work in Progress, not complete yet.
 //!
 //! This module provides functionality for:
@@ -33,10 +33,10 @@
 //! - The module falls back to simplified JWT validation if introspection fails
 //! - Production deployments should implement proper JWT signature validation
 
-use serde::{Deserialize};
+use crate::routing::handlers::RouteConfig;
+use serde::Deserialize;
 use std::collections::HashMap;
 use tracing::{debug, warn};
-use crate::routing::handlers::RouteConfig;
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                        Private Structs                            ****//
@@ -281,5 +281,4 @@ pub async fn validate_oidc_token(
 ///////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
-mod test {
-}
+mod test {}

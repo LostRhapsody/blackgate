@@ -34,22 +34,22 @@
 //! - `jwt`: JWT token creation, validation, and configuration
 //! - `oidc`: OpenID Connect authentication utilities
 
-pub mod types;
 pub mod basic;
-pub mod oauth;
 pub mod jwt;
+pub mod oauth;
+pub mod types;
 
 #[allow(dead_code)]
 pub mod oidc;
 
-use std::sync::{Arc, Mutex};
 use crate::routing::handlers::RouteConfig;
 use basic::encode_basic_auth;
-use oauth::{get_oauth_token, OAuthTokenCache};
 use jwt::{create_jwt_config, validate_jwt_token};
+use oauth::{OAuthTokenCache, get_oauth_token};
 use oidc::{create_oidc_config, fetch_oidc_discovery, validate_oidc_token};
-use types::AuthType;
+use std::sync::{Arc, Mutex};
 use tracing::{debug, error, info, warn};
+use types::AuthType;
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                       Public Functions                            ****//
@@ -75,7 +75,10 @@ pub async fn apply_authentication(
                     debug!("Adding Basic Auth header for route {}", path);
                     Ok(builder.header("Authorization", auth_header))
                 } else {
-                    error!("Invalid Basic Auth format for route {}. Expected 'username:password'", path);
+                    error!(
+                        "Invalid Basic Auth format for route {}. Expected 'username:password'",
+                        path
+                    );
                     Err(axum::response::Response::builder()
                         .status(500)
                         .body(axum::body::Body::from("Invalid Basic Auth configuration"))
@@ -85,7 +88,9 @@ pub async fn apply_authentication(
                 error!("Missing Basic Auth credentials for route {}", path);
                 Err(axum::response::Response::builder()
                     .status(500)
-                    .body(axum::body::Body::from("Basic Auth credentials are required"))
+                    .body(axum::body::Body::from(
+                        "Basic Auth credentials are required",
+                    ))
                     .unwrap())
             }
         }
@@ -104,20 +109,14 @@ pub async fn apply_authentication(
         AuthType::OAuth2 => {
             debug!("Using OAuth 2.0 authentication for route {}", path);
             // Check for required OAuth fields
-            if let (
-                Some(token_url),
-                Some(client_id),
-                Some(client_secret),
-                Some(scope),
-            ) = (
+            if let (Some(token_url), Some(client_id), Some(client_secret), Some(scope)) = (
                 &route_config.oauth_token_url,
                 &route_config.oauth_client_id,
                 &route_config.oauth_client_secret,
                 &route_config.oauth_scope,
             ) {
                 // Create a cache key for this specific OAuth configuration
-                let cache_key =
-                    format!("{}:{}:{}:{}", token_url, client_id, client_secret, scope);
+                let cache_key = format!("{}:{}:{}:{}", token_url, client_id, client_secret, scope);
                 debug!("Using OAuth token cache key: {}", cache_key);
 
                 // Try to get token from cache
@@ -136,7 +135,10 @@ pub async fn apply_authentication(
                         // No valid token in cache, fetch a new one
                         match get_oauth_token(token_url, client_id, client_secret, scope).await {
                             Ok((token, expires_in)) => {
-                                info!("Successfully fetched OAuth token for route {}, expires in {}s", path, expires_in);
+                                info!(
+                                    "Successfully fetched OAuth token for route {}, expires in {}s",
+                                    path, expires_in
+                                );
                                 // Store the token in cache
                                 let mut token_cache = token_cache.lock().unwrap();
                                 token_cache.set_token(cache_key, token.clone(), expires_in);
@@ -146,9 +148,7 @@ pub async fn apply_authentication(
                                 error!("OAuth token error for route {}: {:?}", path, e);
                                 return Err(axum::response::Response::builder()
                                     .status(500)
-                                    .body(axum::body::Body::from(
-                                        "OAuth authentication failed",
-                                    ))
+                                    .body(axum::body::Body::from("OAuth authentication failed"))
                                     .unwrap());
                             }
                         }
@@ -175,7 +175,10 @@ pub async fn apply_authentication(
                     error!("Invalid JWT configuration for route {}: {}", path, e);
                     return Err(axum::response::Response::builder()
                         .status(500)
-                        .body(axum::body::Body::from(format!("JWT configuration error: {}", e)))
+                        .body(axum::body::Body::from(format!(
+                            "JWT configuration error: {}",
+                            e
+                        )))
                         .unwrap());
                 }
             };
@@ -190,7 +193,10 @@ pub async fn apply_authentication(
 
                 match validate_jwt_token(token, &jwt_config) {
                     Ok(claims) => {
-                        debug!("JWT token validated for route {} with subject: {}", path, claims.sub);
+                        debug!(
+                            "JWT token validated for route {} with subject: {}",
+                            path, claims.sub
+                        );
                         // Forward the original token
                         Ok(builder.header("Authorization", auth_header_value))
                     }
@@ -204,7 +210,10 @@ pub async fn apply_authentication(
                 }
             } else {
                 // No token provided in Authorization header
-                warn!("No JWT token provided in Authorization header for route {}", path);
+                warn!(
+                    "No JWT token provided in Authorization header for route {}",
+                    path
+                );
                 Err(axum::response::Response::builder()
                     .status(401)
                     .body(axum::body::Body::from("Authorization header required"))
@@ -221,7 +230,10 @@ pub async fn apply_authentication(
                     error!("Invalid OIDC configuration for route {}: {}", path, e);
                     return Err(axum::response::Response::builder()
                         .status(500)
-                        .body(axum::body::Body::from(format!("OIDC configuration error: {}", e)))
+                        .body(axum::body::Body::from(format!(
+                            "OIDC configuration error: {}",
+                            e
+                        )))
                         .unwrap());
                 }
             };
@@ -238,7 +250,10 @@ pub async fn apply_authentication(
                 let discovery = match fetch_oidc_discovery(oidc_config.issuer()).await {
                     Ok(doc) => doc,
                     Err(e) => {
-                        error!("Failed to fetch OIDC discovery document for route {}: {}", path, e);
+                        error!(
+                            "Failed to fetch OIDC discovery document for route {}: {}",
+                            path, e
+                        );
                         return Err(axum::response::Response::builder()
                             .status(500)
                             .body(axum::body::Body::from("OIDC discovery failed"))
@@ -263,7 +278,10 @@ pub async fn apply_authentication(
                 }
             } else {
                 // No token provided in Authorization header
-                warn!("No OIDC token provided in Authorization header for route {}", path);
+                warn!(
+                    "No OIDC token provided in Authorization header for route {}",
+                    path
+                );
                 Err(axum::response::Response::builder()
                     .status(401)
                     .body(axum::body::Body::from("Authorization header required"))

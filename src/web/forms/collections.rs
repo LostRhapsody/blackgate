@@ -1,17 +1,31 @@
 //! Forms for managing collections in the web interface.
 
-use axum::{extract::{Path, State}, response::Html};
+use axum::{
+    extract::{Path, State},
+    response::Html,
+};
 use hyper::StatusCode;
 use sqlx::Row;
 
-use crate::{database::queries, rate_limiter::{DEFAULT_RATE_LIMIT_PER_HOUR, DEFAULT_RATE_LIMIT_PER_MINUTE}, web::{forms::auth::generate_collection_auth_fields, handlers::RouteCollectionFormData}, AppState, AuthType};
+use crate::{
+    AppState, AuthType,
+    database::queries,
+    rate_limiter::{DEFAULT_RATE_LIMIT_PER_HOUR, DEFAULT_RATE_LIMIT_PER_MINUTE},
+    web::{forms::auth::generate_collection_auth_fields, handlers::RouteCollectionFormData},
+};
 
 pub async fn add_collection_form() -> Html<String> {
     let form_data = RouteCollectionFormData::default();
-    let auth_type = AuthType::from_str(&form_data.default_auth_type.clone().unwrap_or_else(|| "none".into()));
+    let auth_type = AuthType::from_str(
+        &form_data
+            .default_auth_type
+            .clone()
+            .unwrap_or_else(|| "none".into()),
+    );
     let auth_fields = generate_collection_auth_fields(auth_type.clone(), &form_data);
-    
-    let html = format!(r##"
+
+    let html = format!(
+        r##"
         <h3>Add New Collection</h3>
         <form hx-post="/web/collections/add" hx-target="#content" hx-swap="innerHTML">
             <div>
@@ -106,7 +120,10 @@ pub async fn add_collection_form() -> Html<String> {
     Html(html)
 }
 
-pub async fn edit_collection_form(State(state): State<AppState>, Path(id): Path<i64>) -> Result<Html<String>, StatusCode> {
+pub async fn edit_collection_form(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Html<String>, StatusCode> {
     // Fetch the collection data
     let row = queries::fetch_route_collection_by_id(&state.db, id)
         .await
@@ -121,7 +138,7 @@ pub async fn edit_collection_form(State(state): State<AppState>, Path(id): Path<
     let form_data = RouteCollectionFormData {
         name: row.get("name"),
         description: Some(row.get("description")),
-        openapi_spec_url: None, // Edit form doesn't use OpenAPI URL
+        openapi_spec_url: None,  // Edit form doesn't use OpenAPI URL
         base_upstream_url: None, // Edit form doesn't show base URL for now
         default_auth_type: row.get("default_auth_type"),
         default_auth_value: Some(row.get("default_auth_value")),
@@ -139,14 +156,22 @@ pub async fn edit_collection_form(State(state): State<AppState>, Path(id): Path<
         default_oidc_client_secret: Some(row.get("default_oidc_client_secret")),
         default_oidc_audience: Some(row.get("default_oidc_audience")),
         default_oidc_scope: Some(row.get("default_oidc_scope")),
-        default_rate_limit_per_minute: Some(row.get::<i64, _>("default_rate_limit_per_minute") as u32),
+        default_rate_limit_per_minute: Some(
+            row.get::<i64, _>("default_rate_limit_per_minute") as u32
+        ),
         default_rate_limit_per_hour: Some(row.get::<i64, _>("default_rate_limit_per_hour") as u32),
     };
 
-    let auth_type = AuthType::from_str(&form_data.default_auth_type.clone().unwrap_or_else(|| "none".into()));
+    let auth_type = AuthType::from_str(
+        &form_data
+            .default_auth_type
+            .clone()
+            .unwrap_or_else(|| "none".into()),
+    );
     let auth_fields = generate_collection_auth_fields(auth_type.clone(), &form_data);
-    
-    let html = format!(r##"
+
+    let html = format!(
+        r##"
         <h3>Edit Collection</h3>
         <form hx-post="/web/collections/edit/{}" hx-target="#content" hx-swap="innerHTML">
             <div>
@@ -194,16 +219,44 @@ pub async fn edit_collection_form(State(state): State<AppState>, Path(id): Path<
         id,
         form_data.name.unwrap_or_default(),
         form_data.description.unwrap_or_default(),
-        if auth_type == AuthType::None { " selected" } else { "" },
-        if auth_type == AuthType::BasicAuth { " selected" } else { "" },
-        if auth_type == AuthType::ApiKey { " selected" } else { "" },
-        if auth_type == AuthType::OAuth2 { " selected" } else { "" },
-        if auth_type == AuthType::Jwt { " selected" } else { "" },
-        if auth_type == AuthType::Oidc { " selected" } else { "" },
+        if auth_type == AuthType::None {
+            " selected"
+        } else {
+            ""
+        },
+        if auth_type == AuthType::BasicAuth {
+            " selected"
+        } else {
+            ""
+        },
+        if auth_type == AuthType::ApiKey {
+            " selected"
+        } else {
+            ""
+        },
+        if auth_type == AuthType::OAuth2 {
+            " selected"
+        } else {
+            ""
+        },
+        if auth_type == AuthType::Jwt {
+            " selected"
+        } else {
+            ""
+        },
+        if auth_type == AuthType::Oidc {
+            " selected"
+        } else {
+            ""
+        },
         auth_fields,
-        form_data.default_rate_limit_per_minute.unwrap_or(DEFAULT_RATE_LIMIT_PER_MINUTE),
-        form_data.default_rate_limit_per_hour.unwrap_or(DEFAULT_RATE_LIMIT_PER_HOUR)
+        form_data
+            .default_rate_limit_per_minute
+            .unwrap_or(DEFAULT_RATE_LIMIT_PER_MINUTE),
+        form_data
+            .default_rate_limit_per_hour
+            .unwrap_or(DEFAULT_RATE_LIMIT_PER_HOUR)
     );
-    
+
     Ok(Html(html))
 }

@@ -143,7 +143,7 @@ pub fn generate_route_form(
         form_data.path,
         form_data.upstream,
         form_data.backup_route_path.as_deref().unwrap_or(""),
-        collection_options,        
+        collection_options,
         if auth_type == AuthType::None {
             " selected"
         } else {

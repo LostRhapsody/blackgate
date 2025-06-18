@@ -1,42 +1,41 @@
-
 //! OAuth token management module
-//! 
+//!
 //! This module provides OAuth token management with caching.
 //! It includes structures and functions for:
 //! - Caching OAuth tokens with automatic expiration handling
 //! - Making OAuth token requests using the client credentials grant type
 //! - Managing token lifecycles and validation
-//! 
+//!
 //! The module supports OAuth 2.0 client credentials flow and provides an in-memory
 //! token cache to avoid unnecessary token requests for unexpired tokens.
-//! 
+//!
 //! # Example
-//! 
+//!
 //! ```rust
 //! use crate::auth::oauth::{OAuthTokenCache, get_oauth_token};
-//! 
+//!
 //! let mut cache = OAuthTokenCache::new();
-//! 
+//!
 //! // Get a new token
 //! let (token, expires_in) = get_oauth_token(
 //!     "https://auth.example.com/token",
 //!     "client_id",
-//!     "client_secret", 
+//!     "client_secret",
 //!     "read write"
 //! ).await?;
-//! 
+//!
 //! // Cache the token
 //! cache.set_token("api_key".to_string(), token, expires_in);
-//! 
+//!
 //! // Retrieve from cache
 //! if let Some(cached_token) = cache.get_token("api_key") {
 //!     // Use cached token
 //! }
 //! ```
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -126,7 +125,10 @@ pub async fn get_oauth_token(
         Ok(resp) => {
             let token_response: OAuthTokenResponse = resp.json::<OAuthTokenResponse>().await?;
             let expires_in = token_response.expires_in.unwrap_or(3600); // Default to 1 hour
-            debug!("Successfully received OAuth token, expires in {}s", expires_in);
+            debug!(
+                "Successfully received OAuth token, expires in {}s",
+                expires_in
+            );
             Ok((token_response.access_token, expires_in))
         }
         Err(e) => {
@@ -144,25 +146,21 @@ pub async fn get_oauth_token(
 mod test {
     use reqwest::Client;
     use tokio::runtime::Runtime;
-    
+
     /// Test the OAuth 2.0 client credentials flow
     #[test]
     fn test_oauth_client_credentials_flow() {
-        
         // Create a runtime for making async HTTP requests
         let rt = Runtime::new().unwrap();
-        
+
         // First test: try accessing the OAuth info endpoint directly
         let client = Client::new();
-        let info_response = rt.block_on(async {
-            client.get("http://localhost:3001/oauth/info")
-                .send()
-                .await
-        });
-        
+        let info_response =
+            rt.block_on(async { client.get("http://localhost:3001/oauth/info").send().await });
+
         // Ensure the OAuth test server is running
         assert!(info_response.is_ok(), "OAuth test server should be running");
-        
+
         if let Ok(response) = info_response {
             assert_eq!(response.status().as_u16(), 200);
             let text = rt.block_on(async { response.text().await.unwrap_or_default() });
@@ -171,15 +169,16 @@ mod test {
 
         // Second test: try accessing a protected route through the gateway
         // test the protected route via the gateway
-        let gateway_response = rt.block_on(async {
-            client.get("http://localhost:3000/oauth-test")
-                .send()
-                .await
-        });
-        
+        let gateway_response =
+            rt.block_on(async { client.get("http://localhost:3000/oauth-test").send().await });
+
         // Validate the response
         if let Ok(response) = gateway_response {
-            assert_eq!(response.status().as_u16(), 200, "Expected 200 OK from gateway");        
+            assert_eq!(
+                response.status().as_u16(),
+                200,
+                "Expected 200 OK from gateway"
+            );
         } else {
             panic!("Failed to get a response from the gateway");
         }

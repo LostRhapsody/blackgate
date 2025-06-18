@@ -1,26 +1,30 @@
 //! Routes view for the web application.
+use crate::{
+    AppState, auth::types::AuthType, database::queries, health::HealthStatus,
+    web::handlers::generate_health_indicator,
+};
 use axum::{extract::State, response::Html};
 use sqlx::Row;
-use crate::{
-    auth::types::AuthType, database::queries, health::HealthStatus, AppState, web::handlers::generate_health_indicator
-};
 
 pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
     let rows = queries::fetch_routes_basic_info(&state.db)
         .await
         .unwrap_or_default();
 
-    let mut html = String::from(r##"
+    let mut html = String::from(
+        r##"
         <h2>Routes</h2>
         <div class="dashboard-container">
             <button hx-get="/web/routes/add-form" hx-target="#routes-content">Add Route</button>
             <button hx-post="/web/routes/trigger-health" hx-target="#content" hx-swap="innerHTML" hx-confirm="Trigger health check for all routes?">Check Health</button>
             <div id="routes-content" class="dashboard-section">
                 <h3>Configured Routes</h3>
-    "##);
+    "##,
+    );
 
     if !rows.is_empty() {
-        html.push_str(r##"
+        html.push_str(
+            r##"
                 <table class="data-table">
                     <thead>
                         <tr>
@@ -34,7 +38,8 @@ pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
                         </tr>
                     </thead>
                     <tbody>
-        "##);
+        "##,
+        );
         for row in rows {
             let path: String = row.get("path");
             let upstream: String = row.get("upstream");
@@ -43,7 +48,7 @@ pub async fn routes_list(State(state): State<AppState>) -> Html<String> {
             let rate_min: i64 = row.get("rate_limit_per_minute");
             let rate_hour: i64 = row.get("rate_limit_per_hour");
 
-            // unwrap that health status            
+            // unwrap that health status
             let health_status: Option<String> = row.get("health_check_status");
             let health_status = health_status.unwrap_or_else(|| HealthStatus::Unknown.to_string());
             let health_indicator = generate_health_indicator(&health_status);

@@ -1,11 +1,11 @@
 //! # Error Logging Module
-//! 
+//!
 //! This module provides error logging functionality with database persistence.
 //! It captures errors and stores them in the database while also logging them
 //! through the tracing system for immediate visibility.
-//! 
+//!
 //! ## Features
-//! 
+//!
 //! - **Database Persistence**: Store errors for later analysis
 //! - **Tracing Integration**: Use standard tracing::error! for immediate logging
 //! - **Non-blocking**: Async operations that don't slow down request processing
@@ -91,7 +91,7 @@ impl ErrorContext {
     /// Serialize context to JSON string for database storage
     pub fn to_json(&self) -> String {
         let mut context = json!({});
-        
+
         if let Some(ref route_path) = self.route_path {
             context["route_path"] = json!(route_path);
         }
@@ -107,11 +107,11 @@ impl ErrorContext {
         if let Some(ref request_id) = self.request_id {
             context["request_id"] = json!(request_id);
         }
-        
+
         for (key, value) in &self.additional_fields {
             context[key] = json!(value);
         }
-        
+
         context.to_string()
     }
 }
@@ -121,13 +121,13 @@ impl ErrorContext {
 ///////////////////////////////////////////////////////////////////////////////
 
 /// Log an error to both the tracing system and the database
-/// 
+///
 /// This function provides non-blocking error logging that stores errors
 /// in the database for later analysis while also immediately logging
 /// them through the tracing system.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `pool` - Database connection pool
 /// * `severity` - Error severity level
 /// * `message` - Error message to log
@@ -135,16 +135,16 @@ impl ErrorContext {
 /// * `file` - Source file location (use file!() macro)
 /// * `line` - Source line number (use line!() macro)
 /// * `function` - Function name (optional, use function_name!() macro)
-/// 
+///
 /// # Example
-/// 
+///
 /// ```rust
 /// use blackgate::logging::errors::{log_error_async, ErrorSeverity, ErrorContext};
-/// 
+///
 /// let context = ErrorContext::new()
 ///     .with_route("/api/test".to_string())
 ///     .with_method("GET".to_string());
-/// 
+///
 /// log_error_async(
 ///     &pool,
 ///     ErrorSeverity::Error,
@@ -181,7 +181,7 @@ pub async fn log_error_async(
     let context_json = context.map(|c| c.to_json());
     let file_str = file.to_string();
     let function_str = function;
-    
+
     tokio::spawn(async move {
         if let Err(e) = store_error_in_database(
             &pool_clone,
@@ -191,7 +191,9 @@ pub async fn log_error_async(
             &file_str,
             line,
             function_str.as_deref(),
-        ).await {
+        )
+        .await
+        {
             // If we can't store in database, at least log this failure
             error!(
                 target: "blackgate::error_logging",
@@ -236,17 +238,17 @@ async fn store_error_in_database(
 }
 
 /// Clean up error logs older than the specified number of days
-/// 
+///
 /// This function is called by the background cleanup process to remove
 /// old error records from the database to prevent unbounded growth.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `pool` - Database connection pool
 /// * `retention_days` - Number of days to keep error logs
-/// 
+///
 /// # Returns
-/// 
+///
 /// The number of error records that were deleted
 pub async fn cleanup_old_error_logs(
     pool: &SqlitePool,
@@ -257,12 +259,10 @@ pub async fn cleanup_old_error_logs(
         .unwrap_or_else(|| Utc::now())
         .to_rfc3339();
 
-    let result = sqlx::query(
-        "DELETE FROM error_logs WHERE created_at < ?"
-    )
-    .bind(&cutoff_date)
-    .execute(pool)
-    .await?;
+    let result = sqlx::query("DELETE FROM error_logs WHERE created_at < ?")
+        .bind(&cutoff_date)
+        .execute(pool)
+        .await?;
 
     Ok(result.rows_affected())
 }
@@ -294,7 +294,7 @@ mod tests {
                 line_number INTEGER,
                 function_name TEXT,
                 created_at TEXT NOT NULL
-            )"
+            )",
         )
         .execute(&pool)
         .await
@@ -320,7 +320,7 @@ mod tests {
     #[tokio::test]
     async fn test_store_error_in_database() {
         let pool = create_test_pool().await;
-        
+
         let result = store_error_in_database(
             &pool,
             "Test error message",
@@ -329,7 +329,8 @@ mod tests {
             "test.rs",
             42,
             Some("test_function"),
-        ).await;
+        )
+        .await;
 
         assert!(result.is_ok());
 
@@ -338,19 +339,19 @@ mod tests {
             .fetch_one(&pool)
             .await
             .expect("Failed to count error logs");
-        
+
         assert_eq!(count, 1);
     }
 
     #[tokio::test]
     async fn test_cleanup_old_error_logs() {
         let pool = create_test_pool().await;
-        
+
         // Insert a recent error
         let recent_date = Utc::now().to_rfc3339();
         sqlx::query(
             "INSERT INTO error_logs (id, error_message, severity, created_at)
-             VALUES ('recent', 'Recent error', 'error', ?)"
+             VALUES ('recent', 'Recent error', 'error', ?)",
         )
         .bind(&recent_date)
         .execute(&pool)
@@ -361,7 +362,7 @@ mod tests {
         let old_date = (Utc::now() - chrono::Duration::days(10)).to_rfc3339();
         sqlx::query(
             "INSERT INTO error_logs (id, error_message, severity, created_at)
-             VALUES ('old', 'Old error', 'error', ?)"
+             VALUES ('old', 'Old error', 'error', ?)",
         )
         .bind(&old_date)
         .execute(&pool)
@@ -369,7 +370,9 @@ mod tests {
         .expect("Failed to insert old error");
 
         // Clean up errors older than 7 days
-        let deleted = cleanup_old_error_logs(&pool, 7).await.expect("Cleanup failed");
+        let deleted = cleanup_old_error_logs(&pool, 7)
+            .await
+            .expect("Cleanup failed");
         assert_eq!(deleted, 1);
 
         // Verify only the recent error remains
@@ -377,7 +380,7 @@ mod tests {
             .fetch_one(&pool)
             .await
             .expect("Failed to count remaining errors");
-        
+
         assert_eq!(count, 1);
     }
 }

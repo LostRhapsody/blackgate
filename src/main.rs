@@ -35,6 +35,7 @@ use crate::cache::ResponseCache;
 use auth::{oauth::OAuthTokenCache, types::AuthType};
 use database::initialize_database;
 use health::HealthChecker;
+use logging::errors::{ErrorContext, ErrorSeverity, log_error_async};
 use metrics::RequestMetrics;
 use rate_limiter::RateLimiter;
 use routing::handlers::RouteConfig;
@@ -43,7 +44,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
 use tracing::info;
-use logging::errors::{log_error_async, ErrorSeverity, ErrorContext};
 
 /// Application state shared across routes, contains DB pool and token cache
 #[derive(Clone)]
@@ -59,7 +59,6 @@ struct AppState {
 
 #[tokio::main]
 async fn main() {
-
     // Validate environment variables before starting
     let validation_result = env::validate_environment();
 

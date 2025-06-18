@@ -1,6 +1,6 @@
+pub mod forms;
 pub mod handlers;
 pub mod routes;
-pub mod forms;
 pub mod views;
 
 use axum::Router;

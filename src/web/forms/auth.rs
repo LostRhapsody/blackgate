@@ -1,6 +1,9 @@
 //! This module generates HTML inputs for forms that require authentication fields.
 
-use crate::{auth::types::AuthType, web::handlers::{RouteFormData, RouteCollectionFormData}};
+use crate::{
+    auth::types::AuthType,
+    web::handlers::{RouteCollectionFormData, RouteFormData},
+};
 
 /// Generate HTML input fields for different authentication types.
 pub fn generate_auth_fields(auth_type: AuthType, form_data: &RouteFormData) -> String {
@@ -79,9 +82,21 @@ pub fn generate_auth_fields(auth_type: AuthType, form_data: &RouteFormData) -> S
                 </div>
             "##,
             form_data.jwt_secret.as_deref().unwrap_or(""),
-            if form_data.jwt_algorithm.as_deref() == Some("HS256") { " selected" } else { "" },
-            if form_data.jwt_algorithm.as_deref() == Some("HS384") { " selected" } else { "" },
-            if form_data.jwt_algorithm.as_deref() == Some("HS512") { " selected" } else { "" },
+            if form_data.jwt_algorithm.as_deref() == Some("HS256") {
+                " selected"
+            } else {
+                ""
+            },
+            if form_data.jwt_algorithm.as_deref() == Some("HS384") {
+                " selected"
+            } else {
+                ""
+            },
+            if form_data.jwt_algorithm.as_deref() == Some("HS512") {
+                " selected"
+            } else {
+                ""
+            },
             form_data.jwt_issuer.as_deref().unwrap_or(""),
             form_data.jwt_audience.as_deref().unwrap_or(""),
             form_data.jwt_required_claims.as_deref().unwrap_or(""),
@@ -126,7 +141,10 @@ pub fn generate_auth_fields(auth_type: AuthType, form_data: &RouteFormData) -> S
 }
 
 /// Generate HTML input fields for different authentication types for collections.
-pub fn generate_collection_auth_fields(auth_type: AuthType, form_data: &RouteCollectionFormData) -> String {
+pub fn generate_collection_auth_fields(
+    auth_type: AuthType,
+    form_data: &RouteCollectionFormData,
+) -> String {
     match auth_type {
         AuthType::ApiKey => format!(
             r##"
@@ -167,7 +185,10 @@ pub fn generate_collection_auth_fields(auth_type: AuthType, form_data: &RouteCol
             "##,
             form_data.default_oauth_token_url.as_deref().unwrap_or(""),
             form_data.default_oauth_client_id.as_deref().unwrap_or(""),
-            form_data.default_oauth_client_secret.as_deref().unwrap_or(""),
+            form_data
+                .default_oauth_client_secret
+                .as_deref()
+                .unwrap_or(""),
             form_data.default_oauth_scope.as_deref().unwrap_or("")
         ),
         AuthType::Jwt => format!(
@@ -202,12 +223,27 @@ pub fn generate_collection_auth_fields(auth_type: AuthType, form_data: &RouteCol
                 </div>
             "##,
             form_data.default_jwt_secret.as_deref().unwrap_or(""),
-            if form_data.default_jwt_algorithm.as_deref() == Some("HS256") { " selected" } else { "" },
-            if form_data.default_jwt_algorithm.as_deref() == Some("HS384") { " selected" } else { "" },
-            if form_data.default_jwt_algorithm.as_deref() == Some("HS512") { " selected" } else { "" },
+            if form_data.default_jwt_algorithm.as_deref() == Some("HS256") {
+                " selected"
+            } else {
+                ""
+            },
+            if form_data.default_jwt_algorithm.as_deref() == Some("HS384") {
+                " selected"
+            } else {
+                ""
+            },
+            if form_data.default_jwt_algorithm.as_deref() == Some("HS512") {
+                " selected"
+            } else {
+                ""
+            },
             form_data.default_jwt_issuer.as_deref().unwrap_or(""),
             form_data.default_jwt_audience.as_deref().unwrap_or(""),
-            form_data.default_jwt_required_claims.as_deref().unwrap_or(""),
+            form_data
+                .default_jwt_required_claims
+                .as_deref()
+                .unwrap_or(""),
             form_data.default_auth_value.as_deref().unwrap_or("")
         ),
         AuthType::Oidc => format!(
@@ -239,7 +275,10 @@ pub fn generate_collection_auth_fields(auth_type: AuthType, form_data: &RouteCol
             "##,
             form_data.default_oidc_issuer.as_deref().unwrap_or(""),
             form_data.default_oidc_client_id.as_deref().unwrap_or(""),
-            form_data.default_oidc_client_secret.as_deref().unwrap_or(""),
+            form_data
+                .default_oidc_client_secret
+                .as_deref()
+                .unwrap_or(""),
             form_data.default_oidc_audience.as_deref().unwrap_or(""),
             form_data.default_oidc_scope.as_deref().unwrap_or(""),
             form_data.default_auth_value.as_deref().unwrap_or("")

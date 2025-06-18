@@ -1,16 +1,16 @@
 use axum::{
-    extract::Json,
-    http::{StatusCode, Request},
-    routing::{get, post},
     Router,
-    response::Response,
+    extract::Json,
+    http::{Request, StatusCode},
     middleware::Next,
+    response::Response,
+    routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use tokio::sync::oneshot;
-use uuid::Uuid;
 use tracing::info;
+use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
 struct TokenRequest {
@@ -34,7 +34,10 @@ async fn log_request(req: Request<axum::body::Body>, next: Next) -> Result<Respo
     println!("HTTP Version: {:?}", req.version());
     println!("Headers: {:?}", req.headers());
     if let Some(content_type) = req.headers().get("content-type") {
-        println!("Content-Type: {:?}", content_type.to_str().unwrap_or("Invalid"));
+        println!(
+            "Content-Type: {:?}",
+            content_type.to_str().unwrap_or("Invalid")
+        );
     } else {
         println!("Content-Type: None");
     }
@@ -117,10 +120,7 @@ pub async fn spawn_oauth_test_server() -> (SocketAddr, oneshot::Sender<()>) {
 
     info!("OAuth Test Server running on http://{}", addr);
 
-    let server = axum::serve(
-        listener,
-        app.into_make_service(),
-    ).with_graceful_shutdown(async {
+    let server = axum::serve(listener, app.into_make_service()).with_graceful_shutdown(async {
         shutdown_rx.await.ok();
     });
 

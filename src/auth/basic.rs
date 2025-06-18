@@ -83,7 +83,11 @@ pub fn encode_basic_auth(username: &str, password: &str) -> String {
 /// // Returns: true
 /// ```
 #[allow(dead_code)]
-pub fn validate_basic_auth(auth_header: &str, expected_username: &str, expected_password: &str) -> bool {
+pub fn validate_basic_auth(
+    auth_header: &str,
+    expected_username: &str,
+    expected_password: &str,
+) -> bool {
     // Check if header starts with "Basic "
     if !auth_header.starts_with("Basic ") {
         return false;
@@ -158,9 +162,17 @@ mod tests {
 
     #[test]
     fn test_validate_basic_auth_invalid_format() {
-        assert!(!validate_basic_auth("Bearer token123", "admin", "secret123"));
+        assert!(!validate_basic_auth(
+            "Bearer token123",
+            "admin",
+            "secret123"
+        ));
         assert!(!validate_basic_auth("Basic", "admin", "secret123"));
-        assert!(!validate_basic_auth("Basic invalid-base64!", "admin", "secret123"));
+        assert!(!validate_basic_auth(
+            "Basic invalid-base64!",
+            "admin",
+            "secret123"
+        ));
     }
 
     #[test]

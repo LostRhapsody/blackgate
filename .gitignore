@@ -1,3 +1,6 @@
 /target
 /upstream-test-server/target
 .env
+*.db
+*.db-shm
+*.db-wal

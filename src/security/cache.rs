@@ -27,7 +27,7 @@ impl SecretCache {
     }
 
     /// Get a secret from the cache if it exists and hasn't expired
-    pub fn get(&mut self, reference: &SecretReference) -> Option<SecretValue> {
+    pub fn get_cache(&mut self, reference: &SecretReference) -> Option<SecretValue> {
         if let Some(cached_value) = self.cache.get(reference) {
             if cached_value.is_expired() {
                 debug!("Secret expired, removing from cache: {}", reference.key);
@@ -72,7 +72,10 @@ impl SecretCache {
         }
 
         if !self.cache.is_empty() {
-            info!("Cache cleanup completed, {} secrets remaining", self.cache.len());
+            info!(
+                "Cache cleanup completed, {} secrets remaining",
+                self.cache.len()
+            );
         }
     }
 
@@ -158,8 +161,8 @@ mod tests {
         // Test store and get
         cache.store(reference.clone(), value.clone());
         assert!(cache.contains(&reference));
-        
-        let retrieved = cache.get(&reference).unwrap();
+
+        let retrieved = cache.get_cache(&reference).unwrap();
         assert_eq!(retrieved.value, "test-value");
 
         // Test remove
@@ -182,10 +185,10 @@ mod tests {
 
         // Wait for expiry
         std::thread::sleep(std::time::Duration::from_secs(2));
-        
+
         // Should be expired now
         assert!(!cache.contains(&reference));
-        assert!(cache.get(&reference).is_none());
+        assert!(cache.get_cache(&reference).is_none());
     }
 
     #[test]
@@ -199,9 +202,9 @@ mod tests {
         let value = SecretValue::new("test-value".to_string());
 
         cache.store(reference.clone(), value);
-        
+
         // Test hit
-        cache.get(&reference);
+        cache.get_cache(&reference);
         let (hits, misses, hit_rate) = cache.get_hit_miss_stats();
         assert_eq!(hits, 1);
         assert_eq!(misses, 0);
@@ -213,7 +216,7 @@ mod tests {
             "project-123".to_string(),
             "dev".to_string(),
         );
-        cache.get(&other_reference);
+        cache.get_cache(&other_reference);
         let (hits, misses, hit_rate) = cache.get_hit_miss_stats();
         assert_eq!(hits, 1);
         assert_eq!(misses, 1);

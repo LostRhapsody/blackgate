@@ -98,13 +98,12 @@ impl SecretManager {
     /// Retrieve a secret value using its reference
     pub async fn get_secret(&self, reference: &SecretReference) -> Result<String, SecurityError> {
         // Try cache first
-        // {
-        //     let cache = self.cache.read().await;
-        //     println!("cache.get(reference): {:?}", cache.get(&reference.clone()));
-        //     if let Some(cached_value) = cache.get(reference) {
-        //         return Ok(cached_value.value);
-        //     }
-        // }
+        {
+            let mut cache = self.cache.write().await;
+            if let Some(cached_value) = cache.get_cache(reference) {
+                return Ok(cached_value.value);
+            }
+        }
 
         // Fetch from Infisical if not cached
         info!("Fetching secret from Infisical: {}", reference.key);

@@ -1,30 +1,34 @@
 //! # Security Module for BlackGate
 //!
-//! This module provides secure secret management functionality using Infisical.
-//! It handles storing, retrieving, and caching of sensitive data like API keys,
-//! client secrets, and authentication tokens.
+//! This module provides security configuration and utilities for the Blackgate API gateway.
+//! It handles secure secret management using Infisical, HTTP security configuration,
+//! CORS policies, and security middleware.
 //!
 //! ## Features
 //!
-//! - **Infisical Integration**: Secure storage of secrets in Infisical vault
+//! - **Secret Management**: Secure storage and retrieval using Infisical
+//! - **HTTP Security**: Configuration for secure HTTP communication
+//! - **CORS Configuration**: Cross-origin resource sharing policies
+//! - **Security Middleware**: Authentication and authorization utilities
 //! - **Secret Caching**: In-memory caching with TTL for performance
-//! - **Reference Management**: Store secret references instead of raw values
-//! - **Thread-Safe Operations**: Concurrent access to cached secrets
-//! - **Automatic Refresh**: Background refresh of cached secrets
 //!
 //! ## Usage
 //!
-//! The module provides a `SecretManager` that handles all secret operations:
-//! - Store secrets in Infisical and return references
-//! - Retrieve actual secret values using references
-//! - Cache frequently accessed secrets for performance
+//! The module provides configuration structures and utilities for security:
+//! - Configure HTTP client security settings
+//! - Define CORS policies for cross-origin requests
+//! - Manage secrets with Infisical integration
+//! - Apply security middleware to requests
 //!
 //! ## Sub-modules
 //!
 //! - `client`: Infisical client wrapper and configuration
 //! - `cache`: Secret caching implementation with TTL
-//! - `types`: Data structures for secret management
-//! - `http`: Secure HTTP client configuration and utilities
+//! - `config`: Security configuration structures
+//! - `cors`: CORS policy configuration and utilities
+//! - `http`: HTTP security configuration (not client creation)
+//! - `middleware`: Security middleware implementations
+//! - `types`: Data structures for security operations
 
 pub mod cache;
 pub mod client;

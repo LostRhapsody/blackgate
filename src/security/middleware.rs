@@ -43,7 +43,7 @@
 
 use crate::security::{
     config::{SecurityConfig, SecurityConfigError},
-    cors::{CorsValidation, add_cors_headers, create_preflight_response, validate_cors_request},
+    cors::{add_cors_headers, validate_cors_origin},
 };
 use axum::{
     extract::{ConnectInfo, Request},
@@ -98,8 +98,7 @@ pub enum SecurityEvent {
 }
 
 /// Rate limiting tracker for IP addresses
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct RateLimitTracker {
     /// Request counts per minute
     pub requests_per_minute: HashMap<String, (u32, Instant)>,
@@ -108,7 +107,6 @@ pub struct RateLimitTracker {
     /// Failed authentication attempts
     pub auth_failures: HashMap<String, (u32, Instant)>,
 }
-
 
 impl RateLimitTracker {
     /// Check if an IP address is rate limited
@@ -339,7 +337,9 @@ pub async fn request_security_middleware(
     }
 
     // Check for path traversal attempts
-    if security.config.validation.path_traversal_protection && (path.contains("..") || path.contains("//") || path.contains("\\")) {
+    if security.config.validation.path_traversal_protection
+        && (path.contains("..") || path.contains("//") || path.contains("\\"))
+    {
         security.handle_security_event(SecurityEvent::SuspiciousActivity {
             ip: ip.clone(),
             path: path.to_string(),
@@ -464,22 +464,18 @@ pub async fn cors_middleware(
 
     // Validate CORS if enabled
     if security.config.cors.enabled {
-        match validate_cors_request(&security.config.cors, &method, origin, &headers) {
-            CorsValidation::Allowed => {
+        match validate_cors_origin(&security.config.cors, origin) {
+            true => {
                 // Continue with request
                 let mut response = next.run(request).await;
-                add_cors_headers(response.headers_mut(), &security.config.cors, origin, false);
+                add_cors_headers(response.headers_mut(), &security.config.cors, origin);
                 Ok(response)
             }
-            CorsValidation::Preflight => {
-                // Handle preflight request
-                Ok(create_preflight_response(&security.config.cors, origin))
-            }
-            CorsValidation::Forbidden(reason) => {
+            false => {
                 security.handle_security_event(SecurityEvent::CorsViolation {
                     origin: origin.unwrap_or("unknown").to_string(),
                     method: method.to_string(),
-                    reason: reason.clone(),
+                    reason: "NOT ALLOWED".to_string(),
                 });
                 Err(StatusCode::FORBIDDEN)
             }

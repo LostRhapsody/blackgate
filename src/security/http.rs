@@ -1,30 +1,26 @@
-//! # HTTP Client Security Module
+//! # HTTP Security Configuration Module
 //!
-//! This module provides secure HTTP client configuration for the Blackgate API gateway.
-//! It implements security best practices for outbound HTTP connections including
-//! proper timeouts, connection limits, and security headers.
+//! This module provides HTTP security configuration for the Blackgate API gateway.
+//! It defines configuration structures and validation utilities for secure HTTP
+//! communication, but does not create HTTP clients directly.
 //!
 //! ## Features
 //!
-//! - **Connection Security**: Configurable TLS settings and certificate validation
-//! - **Timeout Management**: Request, connection, and read timeouts to prevent hangs
-//! - **Connection Pooling**: Efficient connection reuse with security-aware limits
-//! - **Header Security**: Automatic security header injection and sanitization
-//! - **Redirect Control**: Configurable redirect limits to prevent redirect loops
-//! - **User Agent**: Consistent user agent string for upstream requests
+//! - **URL Validation**: Validates upstream URLs for security
+//! - **Header Sanitization**: Utilities for sanitizing request/response headers
+//! - **Security Configuration**: Configuration structures for HTTP client security
 //!
 //! ## Usage
 //!
 //! ```rust
-//! use crate::security::http::create_secure_client;
+//! use crate::security::http::{HttpClientConfig, validate_upstream_url};
 //!
-//! let client = create_secure_client().await?;
-//! let response = client.get("https://api.example.com").send().await?;
+//! let config = HttpClientConfig::default();
+//! validate_upstream_url("https://api.example.com")?;
 //! ```
 
-use reqwest::{Client, ClientBuilder};
 use std::time::Duration;
-use tracing::{info, warn};
+use tracing::warn;
 use url;
 
 /// Default request timeout in seconds
@@ -87,75 +83,7 @@ impl Default for HttpClientConfig {
     }
 }
 
-/// Create a secure HTTP client with proper security configuration
-pub fn create_secure_client() -> Result<Client, Box<dyn std::error::Error + Send + Sync>> {
-    create_secure_client_with_config(HttpClientConfig::default())
-}
 
-/// Create a secure HTTP client with custom configuration
-pub fn create_secure_client_with_config(
-    config: HttpClientConfig,
-) -> Result<Client, Box<dyn std::error::Error + Send + Sync>> {
-    info!("Creating secure HTTP client with timeouts and security settings");
-
-    let mut builder = ClientBuilder::new()
-        // Timeout configurations
-        .timeout(config.request_timeout)
-        .connect_timeout(config.connect_timeout)
-        .read_timeout(config.read_timeout)
-        // Security configurations
-        .user_agent(&config.user_agent)
-        .redirect(reqwest::redirect::Policy::limited(config.max_redirects))
-        // Connection pool settings
-        .pool_idle_timeout(config.pool_idle_timeout)
-        .pool_max_idle_per_host(config.max_idle_connections_per_host)
-        // HTTP version settings
-        .http2_prior_knowledge()
-        // Security headers
-        .default_headers({
-            let mut headers = reqwest::header::HeaderMap::new();
-            headers.insert("X-Forwarded-By", "Blackgate".parse().unwrap());
-            headers.insert("Cache-Control", "no-cache".parse().unwrap());
-            headers
-        });
-
-    // TLS configuration
-    if !config.verify_tls {
-        warn!("TLS certificate verification is disabled - this should only be used in development");
-        builder = builder.danger_accept_invalid_certs(true);
-    }
-
-    // HTTP/2 configuration
-    if config.enable_http2 {
-        builder = builder.http2_prior_knowledge();
-    } else {
-        builder = builder.http1_only();
-    }
-
-    let client = builder.build()?;
-
-    info!(
-        "Secure HTTP client created - timeout: {}s, connect_timeout: {}s, max_redirects: {}",
-        config.request_timeout.as_secs(),
-        config.connect_timeout.as_secs(),
-        config.max_redirects
-    );
-
-    Ok(client)
-}
-
-/// Create an HTTP client for internal/development use with relaxed security
-pub fn create_development_client() -> Result<Client, Box<dyn std::error::Error + Send + Sync>> {
-    warn!("Creating development HTTP client with relaxed security settings");
-
-    let config = HttpClientConfig {
-        verify_tls: false,
-        request_timeout: Duration::from_secs(60), // Longer timeout for debugging
-        ..Default::default()
-    };
-
-    create_secure_client_with_config(config)
-}
 
 /// Validate that a URL is safe to connect to
 pub fn validate_upstream_url(url: &str) -> Result<(), String> {
@@ -204,7 +132,7 @@ pub fn validate_upstream_url(url: &str) -> Result<(), String> {
 }
 
 /// Sanitize request headers to remove sensitive information
-pub fn sanitize_request_headers(headers: &mut reqwest::header::HeaderMap) {
+pub fn sanitize_request_headers(headers: &mut axum::http::HeaderMap) {
     // Remove potentially sensitive headers that should not be forwarded
     headers.remove("authorization");
     headers.remove("cookie");
@@ -223,7 +151,7 @@ pub fn sanitize_request_headers(headers: &mut reqwest::header::HeaderMap) {
 }
 
 /// Sanitize response headers to remove sensitive upstream information
-pub fn sanitize_response_headers(headers: &mut reqwest::header::HeaderMap) {
+pub fn sanitize_response_headers(headers: &mut axum::http::HeaderMap) {
     // Remove server identification
     headers.remove("server");
     headers.remove("x-powered-by");
@@ -286,7 +214,7 @@ mod tests {
 
     #[test]
     fn test_sanitize_request_headers() {
-        let mut headers = reqwest::header::HeaderMap::new();
+        let mut headers = axum::http::HeaderMap::new();
         headers.insert("authorization", "Bearer token".parse().unwrap());
         headers.insert("cookie", "session=123".parse().unwrap());
         headers.insert("content-type", "application/json".parse().unwrap());
@@ -301,7 +229,7 @@ mod tests {
 
     #[test]
     fn test_sanitize_response_headers() {
-        let mut headers = reqwest::header::HeaderMap::new();
+        let mut headers = axum::http::HeaderMap::new();
         headers.insert("server", "nginx/1.20".parse().unwrap());
         headers.insert("x-powered-by", "PHP/8.0".parse().unwrap());
         headers.insert("content-type", "application/json".parse().unwrap());
@@ -312,17 +240,5 @@ mod tests {
         assert!(!headers.contains_key("x-powered-by"));
         assert!(headers.contains_key("content-type"));
         assert!(headers.contains_key("x-content-type-options"));
-    }
-
-    #[tokio::test]
-    async fn test_create_secure_client() {
-        let client = create_secure_client();
-        assert!(client.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_create_development_client() {
-        let client = create_development_client();
-        assert!(client.is_ok());
     }
 }

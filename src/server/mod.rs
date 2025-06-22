@@ -99,7 +99,13 @@ pub async fn start_server(pool: SqlitePool, config: AppConfig) {
     let token_cache = Arc::new(Mutex::new(OAuthTokenCache::new()));
     let rate_limiter = Arc::new(Mutex::new(RateLimiter::new()));
     let route_cache = Arc::new(RwLock::new(HashMap::new()));
-    let http_client = reqwest::Client::new();
+    let http_client = match crate::routing::client::create_secure_client() {
+        Ok(client) => client,
+        Err(e) => {
+            error!("Failed to create HTTP client: {}", e);
+            return;
+        }
+    };
 
     // Create shared health checker
     let health_checker = Arc::new(HealthChecker::new(Arc::new(pool.clone())));

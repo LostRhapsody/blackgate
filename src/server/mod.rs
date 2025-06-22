@@ -52,6 +52,43 @@ use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
 ///////////////////////////////////////////////////////////////////////////////
+//****                       Private Functions                           ****//
+///////////////////////////////////////////////////////////////////////////////
+
+/// Initialize the secret manager using configuration values
+async fn initialize_secret_manager(config: &AppConfig) -> Option<Arc<SecretManager>> {
+    if let (Some(url), Some(client_id), Some(client_secret), Some(project_id), Some(environment)) = (
+        config.infisical_url.as_ref(),
+        config.infisical_client_id.as_ref(),
+        config.infisical_client_secret.as_ref(),
+        config.infisical_project_id.as_ref(),
+        config.infisical_environment.as_ref(),
+    ) {
+        match SecretManager::new(
+            url.clone(),
+            client_id.clone(),
+            client_secret.clone(),
+            project_id.clone(),
+            environment.clone(),
+        )
+        .await
+        {
+            Ok(manager) => {
+                info!("Infisical secret manager initialized successfully");
+                Some(Arc::new(manager))
+            }
+            Err(e) => {
+                warn!("Failed to initialize Infisical secret manager: {}", e);
+                None
+            }
+        }
+    } else {
+        info!("Infisical not configured, secret management disabled");
+        None
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
 //****                       Public Functions                            ****//
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -72,28 +109,7 @@ pub async fn start_server(pool: SqlitePool, config: AppConfig) {
     let response_cache = Arc::new(ResponseCache::new(default_ttl));
 
     // Initialize secret manager if Infisical is configured
-    let secret_manager =
-        if let (Ok(url), Ok(client_id), Ok(client_secret), Ok(project_id), Ok(environment)) = (
-            std::env::var("INFISICAL_URL"),
-            std::env::var("INFISICAL_CLIENT_ID"),
-            std::env::var("INFISICAL_CLIENT_SECRET"),
-            std::env::var("INFISICAL_PROJECT_ID"),
-            std::env::var("INFISICAL_ENVIRONMENT"),
-        ) {
-            match SecretManager::new(url, client_id, client_secret, project_id, environment).await {
-                Ok(manager) => {
-                    info!("Infisical secret manager initialized successfully");
-                    Some(Arc::new(manager))
-                }
-                Err(e) => {
-                    warn!("Failed to initialize Infisical secret manager: {}", e);
-                    None
-                }
-            }
-        } else {
-            info!("Infisical not configured, secret management disabled");
-            None
-        };
+    let secret_manager = initialize_secret_manager(&config).await;
 
     let app_state = AppState {
         db: pool.clone(),
@@ -158,28 +174,7 @@ pub async fn start_server_with_shutdown(
     let response_cache = Arc::new(ResponseCache::new(default_ttl));
 
     // Initialize secret manager if Infisical is configured
-    let secret_manager =
-        if let (Ok(url), Ok(client_id), Ok(client_secret), Ok(project_id), Ok(environment)) = (
-            std::env::var("INFISICAL_URL"),
-            std::env::var("INFISICAL_CLIENT_ID"),
-            std::env::var("INFISICAL_CLIENT_SECRET"),
-            std::env::var("INFISICAL_PROJECT_ID"),
-            std::env::var("INFISICAL_ENVIRONMENT"),
-        ) {
-            match SecretManager::new(url, client_id, client_secret, project_id, environment).await {
-                Ok(manager) => {
-                    info!("Infisical secret manager initialized successfully");
-                    Some(Arc::new(manager))
-                }
-                Err(e) => {
-                    warn!("Failed to initialize Infisical secret manager: {}", e);
-                    None
-                }
-            }
-        } else {
-            info!("Infisical not configured, secret management disabled");
-            None
-        };
+    let secret_manager = initialize_secret_manager(&config).await;
 
     let app_state = AppState {
         db: pool.clone(),

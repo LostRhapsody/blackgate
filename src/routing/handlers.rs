@@ -723,6 +723,7 @@ pub async fn handle_request_core(
         state.token_cache.clone(),
         auth_header.as_deref(),
         state.secret_manager.clone(),
+        &state.db,
     )
     .await
     {

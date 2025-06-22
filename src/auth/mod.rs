@@ -42,6 +42,7 @@ pub mod types;
 #[allow(dead_code)]
 pub mod oidc;
 
+use crate::logging::errors::{ErrorContext, ErrorSeverity, log_error_async};
 use crate::routing::handlers::RouteConfig;
 use basic::encode_basic_auth;
 use jwt::{create_jwt_config, validate_jwt_token};
@@ -63,7 +64,9 @@ pub async fn apply_authentication(
     token_cache: Arc<Mutex<OAuthTokenCache>>,
     auth_header: Option<&str>,
     secret_manager: Option<Arc<crate::security::SecretManager>>,
+    pool: &sqlx::SqlitePool,
 ) -> Result<reqwest::RequestBuilder, axum::response::Response> {
+    let context = ErrorContext::new().with_route(path.to_string());
     match route_config.auth_type {
         AuthType::BasicAuth => {
             debug!("Using Basic Auth for route {}", path);
@@ -76,17 +79,33 @@ pub async fn apply_authentication(
                     debug!("Adding Basic Auth header for route {}", path);
                     Ok(builder.header("Authorization", auth_header))
                 } else {
-                    error!(
-                        "Invalid Basic Auth format for route {}. Expected 'username:password'",
-                        path
-                    );
+                    log_error_async(
+                        &pool,
+                        ErrorSeverity::Error,
+                        "Invalid Basic Auth format for route {}. Expected 'username:password'"
+                            .to_string(),
+                        Some(context),
+                        file!(),
+                        line!(),
+                        Some("apply_authentication".to_string()),
+                    )
+                    .await;
                     Err(axum::response::Response::builder()
                         .status(500)
                         .body(axum::body::Body::from("Invalid Basic Auth configuration"))
                         .unwrap())
                 }
             } else {
-                error!("Missing Basic Auth credentials for route {}", path);
+                log_error_async(
+                    &pool,
+                    ErrorSeverity::Error,
+                    format!("Missing Basic Auth credentials for route {}", path),
+                    Some(context),
+                    file!(),
+                    line!(),
+                    Some("apply_authentication".to_string()),
+                )
+                .await;
                 Err(axum::response::Response::builder()
                     .status(500)
                     .body(axum::body::Body::from(
@@ -98,25 +117,47 @@ pub async fn apply_authentication(
         AuthType::ApiKey => {
             if let Some(auth_value) = &route_config.auth_value {
                 debug!("Using API key authentication for route {}", path);
-                
+
                 // Check if this is a secret reference
                 let api_key = if auth_value.starts_with("infisical://") {
                     if let Some(manager) = &secret_manager {
-                        match crate::security::types::SecretReference::from_reference_string(auth_value) {
-                            Ok(reference) => {
-                                match manager.get_secret(&reference).await {
-                                    Ok(secret_value) => secret_value,
-                                    Err(e) => {
-                                        error!("Failed to retrieve API key from Infisical for route {}: {}", path, e);
-                                        return Err(axum::response::Response::builder()
-                                            .status(500)
-                                            .body(axum::body::Body::from("Failed to retrieve API key from secret manager"))
-                                            .unwrap());
-                                    }
+                        match crate::security::types::SecretReference::from_reference_string(
+                            auth_value,
+                        ) {
+                            Ok(reference) => match manager.get_secret(&reference).await {
+                                Ok(secret_value) => secret_value,
+                                Err(e) => {
+                                    log_error_async(
+                                        &pool,
+                                        ErrorSeverity::Critical,
+                                        format!("Failed to retrieve API key from Infisical for route {}: {}",
+                                        path, e),
+                                        Some(context),
+                                        file!(),
+                                        line!(),
+                                        Some("apply_authentication".to_string()),
+                                    )
+                                    .await;
+                                    return Err(axum::response::Response::builder()
+                                        .status(500)
+                                        .body(axum::body::Body::from(
+                                            "Failed to retrieve API key from secret manager",
+                                        ))
+                                        .unwrap());
                                 }
-                            }
+                            },
                             Err(e) => {
-                                error!("Invalid secret reference format for route {}: {}", path, e);
+                                log_error_async(
+                                    &pool,
+                                    ErrorSeverity::Error,
+                                    format!("Failed to retrieve API key from Infisical for route {}: {}",
+                                    path, e),
+                                    Some(context),
+                                    file!(),
+                                    line!(),
+                                    Some("apply_authentication".to_string()),
+                                )
+                                .await;
                                 return Err(axum::response::Response::builder()
                                     .status(500)
                                     .body(axum::body::Body::from("Invalid secret reference format"))
@@ -124,7 +165,17 @@ pub async fn apply_authentication(
                             }
                         }
                     } else {
-                        error!("Secret manager not configured but secret reference provided for route {}", path);
+                        log_error_async(
+                            &pool,
+                            ErrorSeverity::Error,
+                            format!("Secret manager not configured but secret reference provided for route {}",
+                            path),
+                            Some(context),
+                            file!(),
+                            line!(),
+                            Some("apply_authentication".to_string()),
+                        )
+                        .await;
                         return Err(axum::response::Response::builder()
                             .status(500)
                             .body(axum::body::Body::from("Secret manager not configured"))
@@ -133,10 +184,19 @@ pub async fn apply_authentication(
                 } else {
                     auth_value.clone()
                 };
-                
+
                 Ok(builder.header("Authorization", api_key))
             } else {
-                error!("Missing API key for route {}", path);
+                log_error_async(
+                    &pool,
+                    ErrorSeverity::Error,
+                    format!("Missing API key for route {}", path),
+                    Some(context),
+                    file!(),
+                    line!(),
+                    Some("apply_authentication".to_string()),
+                )
+                .await;
                 Err(axum::response::Response::builder()
                     .status(500)
                     .body(axum::body::Body::from("API key is required"))
@@ -182,7 +242,16 @@ pub async fn apply_authentication(
                                 token
                             }
                             Err(e) => {
-                                error!("OAuth token error for route {}: {:?}", path, e);
+                                log_error_async(
+                                    &pool,
+                                    ErrorSeverity::Error,
+                                    format!("OAuth token error for route {}: {:?}", path, e),
+                                    Some(context),
+                                    file!(),
+                                    line!(),
+                                    Some("apply_authentication".to_string()),
+                                )
+                                .await;
                                 return Err(axum::response::Response::builder()
                                     .status(500)
                                     .body(axum::body::Body::from("OAuth authentication failed"))
@@ -195,7 +264,16 @@ pub async fn apply_authentication(
                 // Add the token to the request
                 Ok(builder.header("Authorization", format!("Bearer {}", token)))
             } else {
-                error!("Missing OAuth configuration for route {}", path);
+                log_error_async(
+                    &pool,
+                    ErrorSeverity::Error,
+                    format!("Missing OAuth configuration for route {}", path),
+                    Some(context),
+                    file!(),
+                    line!(),
+                    Some("apply_authentication".to_string()),
+                )
+                .await;
                 Err(axum::response::Response::builder()
                     .status(500)
                     .body(axum::body::Body::from("OAuth configuration is incomplete"))
@@ -209,7 +287,16 @@ pub async fn apply_authentication(
             let jwt_config = match create_jwt_config(route_config) {
                 Ok(config) => config,
                 Err(e) => {
-                    error!("Invalid JWT configuration for route {}: {}", path, e);
+                    log_error_async(
+                        &pool,
+                        ErrorSeverity::Error,
+                        format!("Invalid JWT configuration for route {}: {}", path, e),
+                        Some(context),
+                        file!(),
+                        line!(),
+                        Some("apply_authentication".to_string()),
+                    )
+                    .await;
                     return Err(axum::response::Response::builder()
                         .status(500)
                         .body(axum::body::Body::from(format!(
@@ -238,7 +325,16 @@ pub async fn apply_authentication(
                         Ok(builder.header("Authorization", auth_header_value))
                     }
                     Err(e) => {
-                        warn!("JWT token validation failed for route {}: {}", path, e);
+                        log_error_async(
+                            &pool,
+                            ErrorSeverity::Error,
+                            format!("JWT token validation failed for route {}: {}", path, e),
+                            Some(context),
+                            file!(),
+                            line!(),
+                            Some("apply_authentication".to_string()),
+                        )
+                        .await;
                         Err(axum::response::Response::builder()
                             .status(401)
                             .body(axum::body::Body::from("Invalid JWT token"))
@@ -247,10 +343,19 @@ pub async fn apply_authentication(
                 }
             } else {
                 // No token provided in Authorization header
-                warn!(
-                    "No JWT token provided in Authorization header for route {}",
-                    path
-                );
+                log_error_async(
+                    &pool,
+                    ErrorSeverity::Warning,
+                    format!(
+                        "No JWT token provided in Authorization header for route {}",
+                        path
+                    ),
+                    Some(context),
+                    file!(),
+                    line!(),
+                    Some("apply_authentication".to_string()),
+                )
+                .await;
                 Err(axum::response::Response::builder()
                     .status(401)
                     .body(axum::body::Body::from("Authorization header required"))
@@ -264,7 +369,16 @@ pub async fn apply_authentication(
             let oidc_config = match create_oidc_config(route_config) {
                 Ok(config) => config,
                 Err(e) => {
-                    error!("Invalid OIDC configuration for route {}: {}", path, e);
+                    log_error_async(
+                        &pool,
+                        ErrorSeverity::Error,
+                        format!("Invalid OIDC configuration for route {}: {}", path, e),
+                        Some(context),
+                        file!(),
+                        line!(),
+                        Some("apply_authentication".to_string()),
+                    )
+                    .await;
                     return Err(axum::response::Response::builder()
                         .status(500)
                         .body(axum::body::Body::from(format!(
@@ -287,10 +401,19 @@ pub async fn apply_authentication(
                 let discovery = match fetch_oidc_discovery(oidc_config.issuer()).await {
                     Ok(doc) => doc,
                     Err(e) => {
-                        error!(
-                            "Failed to fetch OIDC discovery document for route {}: {}",
-                            path, e
-                        );
+                        log_error_async(
+                            &pool,
+                            ErrorSeverity::Error,
+                            format!(
+                                "Failed to fetch OIDC discovery document for route {}: {}",
+                                path, e
+                            ),
+                            Some(context),
+                            file!(),
+                            line!(),
+                            Some("apply_authentication".to_string()),
+                        )
+                        .await;
                         return Err(axum::response::Response::builder()
                             .status(500)
                             .body(axum::body::Body::from("OIDC discovery failed"))
@@ -306,7 +429,16 @@ pub async fn apply_authentication(
                         Ok(builder.header("Authorization", auth_header_value))
                     }
                     Err(e) => {
-                        warn!("OIDC token validation failed for route {}: {}", path, e);
+                        log_error_async(
+                            &pool,
+                            ErrorSeverity::Error,
+                            format!("OIDC token validation failed for route {}: {}", path, e),
+                            Some(context),
+                            file!(),
+                            line!(),
+                            Some("apply_authentication".to_string()),
+                        )
+                        .await;
                         Err(axum::response::Response::builder()
                             .status(401)
                             .body(axum::body::Body::from("Invalid OIDC token"))
@@ -315,10 +447,19 @@ pub async fn apply_authentication(
                 }
             } else {
                 // No token provided in Authorization header
-                warn!(
-                    "No OIDC token provided in Authorization header for route {}",
-                    path
-                );
+                log_error_async(
+                    &pool,
+                    ErrorSeverity::Warning,
+                    format!(
+                        "No OIDC token provided in Authorization header for route {}",
+                        path
+                    ),
+                    Some(context),
+                    file!(),
+                    line!(),
+                    Some("apply_authentication".to_string()),
+                )
+                .await;
                 Err(axum::response::Response::builder()
                     .status(401)
                     .body(axum::body::Body::from("Authorization header required"))

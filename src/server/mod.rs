@@ -44,6 +44,7 @@ use crate::health::HealthChecker;
 use crate::logging::errors::cleanup_old_error_logs;
 use crate::rate_limiter::RateLimiter;
 use crate::routing::router::create_router;
+use crate::security::SecretManager;
 use sqlx::{Row, sqlite::SqlitePool};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -70,6 +71,30 @@ pub async fn start_server(pool: SqlitePool, config: AppConfig) {
     let default_ttl: u64 = get_response_cache_default_ttl(&pool);
     let response_cache = Arc::new(ResponseCache::new(default_ttl));
 
+    // Initialize secret manager if Infisical is configured
+    let secret_manager =
+        if let (Ok(url), Ok(client_id), Ok(client_secret), Ok(project_id), Ok(environment)) = (
+            std::env::var("INFISICAL_URL"),
+            std::env::var("INFISICAL_CLIENT_ID"),
+            std::env::var("INFISICAL_CLIENT_SECRET"),
+            std::env::var("INFISICAL_PROJECT_ID"),
+            std::env::var("INFISICAL_ENVIRONMENT"),
+        ) {
+            match SecretManager::new(url, client_id, client_secret, project_id, environment).await {
+                Ok(manager) => {
+                    info!("Infisical secret manager initialized successfully");
+                    Some(Arc::new(manager))
+                }
+                Err(e) => {
+                    warn!("Failed to initialize Infisical secret manager: {}", e);
+                    None
+                }
+            }
+        } else {
+            info!("Infisical not configured, secret management disabled");
+            None
+        };
+
     let app_state = AppState {
         db: pool.clone(),
         token_cache,
@@ -78,6 +103,7 @@ pub async fn start_server(pool: SqlitePool, config: AppConfig) {
         http_client,
         health_checker: health_checker.clone(),
         response_cache,
+        secret_manager,
     };
 
     let app = create_router(app_state);
@@ -130,6 +156,30 @@ pub async fn start_server_with_shutdown(
     let default_ttl: u64 = get_response_cache_default_ttl(&pool);
     let response_cache = Arc::new(ResponseCache::new(default_ttl));
 
+    // Initialize secret manager if Infisical is configured
+    let secret_manager =
+        if let (Ok(url), Ok(client_id), Ok(client_secret), Ok(project_id), Ok(environment)) = (
+            std::env::var("INFISICAL_URL"),
+            std::env::var("INFISICAL_CLIENT_ID"),
+            std::env::var("INFISICAL_CLIENT_SECRET"),
+            std::env::var("INFISICAL_PROJECT_ID"),
+            std::env::var("INFISICAL_ENVIRONMENT"),
+        ) {
+            match SecretManager::new(url, client_id, client_secret, project_id, environment).await {
+                Ok(manager) => {
+                    info!("Infisical secret manager initialized successfully");
+                    Some(Arc::new(manager))
+                }
+                Err(e) => {
+                    warn!("Failed to initialize Infisical secret manager: {}", e);
+                    None
+                }
+            }
+        } else {
+            info!("Infisical not configured, secret management disabled");
+            None
+        };
+
     let app_state = AppState {
         db: pool.clone(),
         token_cache,
@@ -138,6 +188,7 @@ pub async fn start_server_with_shutdown(
         http_client,
         health_checker: health_checker.clone(),
         response_cache,
+        secret_manager,
     };
 
     let app = create_router(app_state);

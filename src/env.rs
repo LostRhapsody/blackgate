@@ -25,6 +25,13 @@
 //! - `BLACKGATE_JWT_DEFAULT_SECRET`: Default JWT secret for routes without explicit configuration
 //! - `BLACKGATE_RATE_LIMIT_GLOBAL`: Global rate limit per minute (default: "1000")
 //!
+//! ## Infisical Secret Management (Optional)
+//! - `INFISICAL_URL`: Infisical server URL (e.g., "http://localhost:8080")
+//! - `INFISICAL_CLIENT_ID`: Universal Auth client ID for machine identity
+//! - `INFISICAL_CLIENT_SECRET`: Universal Auth client secret for machine identity
+//! - `INFISICAL_PROJECT_ID`: Infisical project ID where secrets are stored
+//! - `INFISICAL_ENVIRONMENT`: Environment name (e.g., "dev", "staging", "prod")
+//!
 //! ## Backup Configuration
 //! - `BLACKGATE_BACKUP_ENABLED`: Enable automatic database backups (default: "true")
 //! - `BLACKGATE_BACKUP_INTERVAL_HOURS`: Backup interval in hours (default: "24")
@@ -97,6 +104,12 @@ pub struct AppConfig {
 
     // Security
     pub rate_limit_global: u32,
+    pub tls_cert_path: Option<String>,
+    pub tls_key_path: Option<String>,
+    pub enable_tls: bool,
+    pub cors_allowed_origins: Vec<String>,
+    pub max_request_size: usize,
+    pub enable_security_headers: bool,
 
     // Backup
     pub backup_enabled: bool,
@@ -106,6 +119,13 @@ pub struct AppConfig {
     // todo update our backup config to use these
     pub _aws_secret_access_key: Option<String>,
     pub _aws_access_key_id: Option<String>,
+
+    // infisical
+    pub infisical_url: Option<String>,
+    pub infisical_client_id: Option<String>,
+    pub infisical_client_secret: Option<String>,
+    pub infisical_project_id: Option<String>,
+    pub infisical_environment: Option<String>,
 }
 
 /// Validate all environment variables and return configuration or errors
@@ -215,7 +235,23 @@ pub fn validate_environment() -> Result<AppConfig, Vec<EnvValidationError>> {
         parse_env_var_with_default("BLACKGATE_RESPONSE_CACHE_MAX_SIZE", 1000, &mut warnings);
 
     let rate_limit_global =
-        parse_env_var_with_default("BLACKGATE_RATE_LIMIT_GLOBAL", 1000, &mut warnings);
+        parse_env_var_with_default("BLACKGATE_RATE_LIMIT_GLOBAL", 0, &mut warnings);
+
+    // Security settings
+    let tls_cert_path = std::env::var("BLACKGATE_TLS_CERT_PATH").ok();
+    let tls_key_path = std::env::var("BLACKGATE_TLS_KEY_PATH").ok();
+    let enable_tls = parse_env_var_with_default("BLACKGATE_ENABLE_TLS", false, &mut warnings);
+
+    let cors_allowed_origins = std::env::var("BLACKGATE_CORS_ALLOWED_ORIGINS")
+        .unwrap_or_else(|_| "*".to_string())
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .collect();
+
+    let max_request_size =
+        parse_env_var_with_default("BLACKGATE_MAX_REQUEST_SIZE", 10485760, &mut warnings); // 10MB default
+    let enable_security_headers =
+        parse_env_var_with_default("BLACKGATE_ENABLE_SECURITY_HEADERS", true, &mut warnings);
 
     // Backup configuration
     let backup_enabled =
@@ -279,12 +315,24 @@ pub fn validate_environment() -> Result<AppConfig, Vec<EnvValidationError>> {
         response_cache_ttl,
         response_cache_max_size,
         rate_limit_global,
+        tls_cert_path,
+        tls_key_path,
+        enable_tls,
+        cors_allowed_origins,
+        max_request_size,
+        enable_security_headers,
         backup_enabled,
         backup_interval_hours,
         s3_bucket,
         s3_region,
         _aws_access_key_id,
         _aws_secret_access_key,
+        // Infisical configuration (optional)
+        infisical_url: env::var("INFISICAL_URL").ok(),
+        infisical_client_id: env::var("INFISICAL_CLIENT_ID").ok(),
+        infisical_client_secret: env::var("INFISICAL_CLIENT_SECRET").ok(),
+        infisical_project_id: env::var("INFISICAL_PROJECT_ID").ok(),
+        infisical_environment: env::var("INFISICAL_ENVIRONMENT").ok(),
     })
 }
 
@@ -490,7 +538,8 @@ BLACKGATE_BACKUP_INTERVAL_HOURS=24
 
 # AWS profile (if using AWS CLI profiles)
 # AWS_PROFILE=blackgate-profile
-"#.to_string()
+"#
+    .to_string()
 }
 
 /// Helper function to parse environment variable with default value

@@ -25,6 +25,7 @@ mod oauth_test_server;
 mod open_api;
 mod rate_limiter;
 mod routing;
+mod security;
 mod server;
 mod web;
 mod webhook;
@@ -38,6 +39,7 @@ use health::HealthChecker;
 use metrics::RequestMetrics;
 use rate_limiter::RateLimiter;
 use routing::handlers::RouteConfig;
+use security::SecretManager;
 use sqlx::sqlite::SqlitePool;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -54,6 +56,7 @@ struct AppState {
     http_client: reqwest::Client,
     health_checker: Arc<HealthChecker>,
     response_cache: Arc<ResponseCache>,
+    secret_manager: Option<Arc<SecretManager>>,
 }
 
 #[tokio::main]

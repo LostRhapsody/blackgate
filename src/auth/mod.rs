@@ -62,6 +62,7 @@ pub async fn apply_authentication(
     path: &str,
     token_cache: Arc<Mutex<OAuthTokenCache>>,
     auth_header: Option<&str>,
+    secret_manager: Option<Arc<crate::security::SecretManager>>,
 ) -> Result<reqwest::RequestBuilder, axum::response::Response> {
     match route_config.auth_type {
         AuthType::BasicAuth => {
@@ -97,7 +98,43 @@ pub async fn apply_authentication(
         AuthType::ApiKey => {
             if let Some(auth_value) = &route_config.auth_value {
                 debug!("Using API key authentication for route {}", path);
-                Ok(builder.header("Authorization", auth_value))
+                
+                // Check if this is a secret reference
+                let api_key = if auth_value.starts_with("infisical://") {
+                    if let Some(manager) = &secret_manager {
+                        match crate::security::types::SecretReference::from_reference_string(auth_value) {
+                            Ok(reference) => {
+                                match manager.get_secret(&reference).await {
+                                    Ok(secret_value) => secret_value,
+                                    Err(e) => {
+                                        error!("Failed to retrieve API key from Infisical for route {}: {}", path, e);
+                                        return Err(axum::response::Response::builder()
+                                            .status(500)
+                                            .body(axum::body::Body::from("Failed to retrieve API key from secret manager"))
+                                            .unwrap());
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                error!("Invalid secret reference format for route {}: {}", path, e);
+                                return Err(axum::response::Response::builder()
+                                    .status(500)
+                                    .body(axum::body::Body::from("Invalid secret reference format"))
+                                    .unwrap());
+                            }
+                        }
+                    } else {
+                        error!("Secret manager not configured but secret reference provided for route {}", path);
+                        return Err(axum::response::Response::builder()
+                            .status(500)
+                            .body(axum::body::Body::from("Secret manager not configured"))
+                            .unwrap());
+                    }
+                } else {
+                    auth_value.clone()
+                };
+                
+                Ok(builder.header("Authorization", api_key))
             } else {
                 error!("Missing API key for route {}", path);
                 Err(axum::response::Response::builder()

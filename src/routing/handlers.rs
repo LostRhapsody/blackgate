@@ -69,14 +69,21 @@ use crate::{
     health::HealthStatus,
     metrics::{RequestMetrics, store_metrics},
     rate_limiter::check_rate_limit,
+    security::http::validate_upstream_url,
 };
 use axum::{
     extract::OriginalUri,
-    http::{HeaderMap, Method},
+    http::{HeaderMap, Method, StatusCode},
 };
 use sqlx::Row;
 use tokio::time::Instant;
 use tracing::{error, info, warn};
+
+/// Maximum request body size in bytes (10MB)
+const MAX_REQUEST_BODY_SIZE: usize = 10 * 1024 * 1024;
+
+/// Maximum path length to prevent path traversal attacks
+const MAX_PATH_LENGTH: usize = 2048;
 
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Public Structs                            ****//
@@ -307,8 +314,53 @@ pub async fn handle_request_core(
     body: Option<String>,
     auth_header: Option<String>,
 ) -> axum::response::Response {
+    // Validate path length to prevent path traversal and DoS attacks
+    if path.len() > MAX_PATH_LENGTH {
+        warn!(
+            method = %method,
+            path_length = path.len(),
+            "Request rejected: path too long"
+        );
+        return axum::response::Response::builder()
+            .status(StatusCode::URI_TOO_LONG)
+            .header("Content-Type", "text/plain")
+            .body(axum::body::Body::from("Request URI too long"))
+            .unwrap();
+    }
+
+    // Validate request body size to prevent DoS attacks
+    let request_size = body.as_ref().map_or(0, |b| b.len());
+    if request_size > MAX_REQUEST_BODY_SIZE {
+        warn!(
+            method = %method,
+            path = %path,
+            request_size_bytes = request_size,
+            max_size = MAX_REQUEST_BODY_SIZE,
+            "Request rejected: body too large"
+        );
+        return axum::response::Response::builder()
+            .status(StatusCode::PAYLOAD_TOO_LARGE)
+            .header("Content-Type", "text/plain")
+            .body(axum::body::Body::from("Request entity too large"))
+            .unwrap();
+    }
+
+    // Check for path traversal attempts
+    if path.contains("..") || path.contains("//") || path.contains("\\") {
+        warn!(
+            method = %method,
+            path = %path,
+            "Request rejected: potential path traversal attempt"
+        );
+        return axum::response::Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .header("Content-Type", "text/plain")
+            .body(axum::body::Body::from("Invalid path"))
+            .unwrap();
+    }
+
     // Initialize metrics
-    let request_size = body.as_ref().map_or(0, |b| b.len() as i64);
+    let request_size = request_size as i64;
     let mut metrics = RequestMetrics::new(path.clone(), method.to_string(), request_size);
 
     info!(
@@ -631,6 +683,26 @@ pub async fn handle_request_core(
         default_oidc_scope: route_config.default_oidc_scope,
     };
 
+    // Validate upstream URL for security
+    if let Err(validation_error) = validate_upstream_url(&auth_route_config.upstream) {
+        error!(
+            request_id = %metrics.id,
+            upstream = %auth_route_config.upstream,
+            error = %validation_error,
+            "Upstream URL validation failed"
+        );
+
+        metrics.set_error(format!("Invalid upstream URL: {}", validation_error));
+        store_metrics(state.db.clone(), metrics);
+
+        return axum::response::Response::builder()
+            .status(502)
+            .body(axum::body::Body::from(
+                "Bad Gateway: Invalid upstream configuration",
+            ))
+            .unwrap();
+    }
+
     info!(
         request_id = %metrics.id,
         upstream = %route_config.upstream,
@@ -650,6 +722,7 @@ pub async fn handle_request_core(
         &path,
         state.token_cache.clone(),
         auth_header.as_deref(),
+        state.secret_manager.clone(),
     )
     .await
     {
@@ -775,11 +848,26 @@ pub async fn handle_request_core(
         });
     }
 
-    // Return the response to the client
-    axum::response::Response::builder()
-        .status(response_status)
-        .body(response_body.into())
-        .unwrap()
+    // Return the response to the client with security headers
+    let mut response = axum::response::Response::builder().status(response_status);
+
+    let headers = response.headers_mut().unwrap();
+
+    // Add security headers
+    headers.insert("X-Content-Type-Options", "nosniff".parse().unwrap());
+    headers.insert("X-Frame-Options", "DENY".parse().unwrap());
+    headers.insert("X-XSS-Protection", "1; mode=block".parse().unwrap());
+    headers.insert(
+        "Referrer-Policy",
+        "strict-origin-when-cross-origin".parse().unwrap(),
+    );
+    headers.insert("X-Gateway", "Blackgate".parse().unwrap());
+
+    // Remove potentially sensitive headers from upstream response
+    headers.remove("server");
+    headers.remove("x-powered-by");
+
+    response.body(response_body.into()).unwrap()
 }
 
 ///////////////////////////////////////////////////////////////////////////////

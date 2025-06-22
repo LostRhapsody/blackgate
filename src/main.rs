@@ -33,6 +33,7 @@ mod webhook;
 #[cfg(test)]
 mod tests;
 use crate::cache::ResponseCache;
+use crate::env::AppConfig;
 use auth::{oauth::OAuthTokenCache, types::AuthType};
 use database::initialize_database;
 use health::HealthChecker;
@@ -57,6 +58,7 @@ struct AppState {
     health_checker: Arc<HealthChecker>,
     response_cache: Arc<ResponseCache>,
     secret_manager: Option<Arc<SecretManager>>,
+    config: AppConfig,
 }
 
 #[tokio::main]

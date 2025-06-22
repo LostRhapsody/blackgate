@@ -24,8 +24,10 @@
 //! ## Security Configuration
 //! - `BLACKGATE_JWT_DEFAULT_SECRET`: Default JWT secret for routes without explicit configuration
 //! - `BLACKGATE_RATE_LIMIT_GLOBAL`: Global rate limit per minute (default: "1000")
+//! - `BLACKGATE_MAX_REQUEST_SIZE`: Maximum request size in bytes (default: "1048576")
+//! - `BLACKGATE_MAX_PATH_LENGTH`: Maximum request path length (default: "2048")
 //!
-//! ## Infisical Secret Management (Optional)
+//! ## Infisical Secret Management
 //! - `INFISICAL_URL`: Infisical server URL (e.g., "http://localhost:8080")
 //! - `INFISICAL_CLIENT_ID`: Universal Auth client ID for machine identity
 //! - `INFISICAL_CLIENT_SECRET`: Universal Auth client secret for machine identity
@@ -109,6 +111,7 @@ pub struct AppConfig {
     pub enable_tls: bool,
     pub cors_allowed_origins: Vec<String>,
     pub max_request_size: usize,
+    pub max_path_length: usize,
     pub enable_security_headers: bool,
 
     // Backup
@@ -250,8 +253,17 @@ pub fn validate_environment() -> Result<AppConfig, Vec<EnvValidationError>> {
 
     let max_request_size =
         parse_env_var_with_default("BLACKGATE_MAX_REQUEST_SIZE", 10485760, &mut warnings); // 10MB default
+    let max_path_length =
+        parse_env_var_with_default("BLACKGATE_MAX_PATH_LENGTH", 2048, &mut warnings); // 2KB default
     let enable_security_headers =
         parse_env_var_with_default("BLACKGATE_ENABLE_SECURITY_HEADERS", true, &mut warnings);
+
+    // infisical
+    let infisical_url = env::var("INFISICAL_URL").ok();
+    let infisical_client_id = env::var("INFISICAL_CLIENT_ID").ok();
+    let infisical_client_secret = env::var("INFISICAL_CLIENT_SECRET").ok();
+    let infisical_project_id = env::var("INFISICAL_PROJECT_ID").ok();
+    let infisical_environment = env::var("INFISICAL_ENVIRONMENT").ok();
 
     // Backup configuration
     let backup_enabled =
@@ -320,6 +332,7 @@ pub fn validate_environment() -> Result<AppConfig, Vec<EnvValidationError>> {
         enable_tls,
         cors_allowed_origins,
         max_request_size,
+        max_path_length,
         enable_security_headers,
         backup_enabled,
         backup_interval_hours,
@@ -327,12 +340,11 @@ pub fn validate_environment() -> Result<AppConfig, Vec<EnvValidationError>> {
         s3_region,
         _aws_access_key_id,
         _aws_secret_access_key,
-        // Infisical configuration (optional)
-        infisical_url: env::var("INFISICAL_URL").ok(),
-        infisical_client_id: env::var("INFISICAL_CLIENT_ID").ok(),
-        infisical_client_secret: env::var("INFISICAL_CLIENT_SECRET").ok(),
-        infisical_project_id: env::var("INFISICAL_PROJECT_ID").ok(),
-        infisical_environment: env::var("INFISICAL_ENVIRONMENT").ok(),
+        infisical_url,
+        infisical_client_id,
+        infisical_client_secret,
+        infisical_project_id,
+        infisical_environment,
     })
 }
 
@@ -491,14 +503,39 @@ BLACKGATE_RESPONSE_CACHE_MAX_SIZE=1000
 # Security Configuration
 # =============================================================================
 
-# Default JWT secret for routes without explicit configuration
-# Recommended: Use a cryptographically strong secret (32+ characters)
-# Generate with: openssl rand -base64 32
-# BLACKGATE_JWT_DEFAULT_SECRET=your-super-secret-jwt-key-here
-
 # Global rate limit per minute
-# Default: 1000 requests per minute
+# Default: 0 (unlimited)
 BLACKGATE_RATE_LIMIT_GLOBAL=1000
+
+# TLS/SSL Configuration
+# Path to TLS certificate file (PEM format)
+# BLACKGATE_TLS_CERT_PATH=/path/to/cert.pem
+
+# Path to TLS private key file (PEM format)
+# BLACKGATE_TLS_KEY_PATH=/path/to/key.pem
+
+# Enable TLS/SSL support
+# Default: false
+BLACKGATE_ENABLE_TLS=false
+
+# CORS allowed origins (comma-separated)
+# Default: * (allow all origins)
+# Examples:
+#   BLACKGATE_CORS_ALLOWED_ORIGINS=https://example.com
+#   BLACKGATE_CORS_ALLOWED_ORIGINS=https://app.example.com,https://api.example.com
+BLACKGATE_CORS_ALLOWED_ORIGINS=*
+
+# Maximum request size in bytes
+# Default: 10485760 (10MB)
+BLACKGATE_MAX_REQUEST_SIZE=10485760
+
+# Maximum path length in bytes
+# Default: 2048 (2KB)
+BLACKGATE_MAX_PATH_LENGTH=2048
+
+# Enable security headers (X-Frame-Options, X-Content-Type-Options, etc.)
+# Default: true
+BLACKGATE_ENABLE_SECURITY_HEADERS=true
 
 # =============================================================================
 # Backup Configuration
@@ -538,6 +575,27 @@ BLACKGATE_BACKUP_INTERVAL_HOURS=24
 
 # AWS profile (if using AWS CLI profiles)
 # AWS_PROFILE=blackgate-profile
+
+# =============================================================================
+# Infisical Configuration (Optional)
+# =============================================================================
+
+# Infisical server URL
+# Example: https://app.infisical.com
+# INFISICAL_URL=https://app.infisical.com
+
+# Infisical client ID for machine identity authentication
+# INFISICAL_CLIENT_ID=your-client-id
+
+# Infisical client secret for machine identity authentication
+# INFISICAL_CLIENT_SECRET=your-client-secret
+
+# Infisical project ID
+# INFISICAL_PROJECT_ID=your-project-id
+
+# Infisical environment (e.g., dev, staging, prod)
+# Default: dev
+# INFISICAL_ENVIRONMENT=dev
 "#
     .to_string()
 }

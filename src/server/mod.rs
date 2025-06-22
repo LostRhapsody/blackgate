@@ -104,6 +104,7 @@ pub async fn start_server(pool: SqlitePool, config: AppConfig) {
         health_checker: health_checker.clone(),
         response_cache,
         secret_manager,
+        config: config.clone(),
     };
 
     let app = create_router(app_state);
@@ -189,6 +190,7 @@ pub async fn start_server_with_shutdown(
         health_checker: health_checker.clone(),
         response_cache,
         secret_manager,
+        config: config.clone(),
     };
 
     let app = create_router(app_state);

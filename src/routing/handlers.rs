@@ -79,12 +79,6 @@ use sqlx::Row;
 use tokio::time::Instant;
 use tracing::{error, info, warn};
 
-/// Maximum request body size in bytes (10MB)
-const MAX_REQUEST_BODY_SIZE: usize = 10 * 1024 * 1024;
-
-/// Maximum path length to prevent path traversal attacks
-const MAX_PATH_LENGTH: usize = 2048;
-
 ///////////////////////////////////////////////////////////////////////////////
 //****                         Public Structs                            ****//
 ///////////////////////////////////////////////////////////////////////////////
@@ -315,7 +309,7 @@ pub async fn handle_request_core(
     auth_header: Option<String>,
 ) -> axum::response::Response {
     // Validate path length to prevent path traversal and DoS attacks
-    if path.len() > MAX_PATH_LENGTH {
+    if path.len() > state.config.max_path_length {
         warn!(
             method = %method,
             path_length = path.len(),
@@ -330,12 +324,12 @@ pub async fn handle_request_core(
 
     // Validate request body size to prevent DoS attacks
     let request_size = body.as_ref().map_or(0, |b| b.len());
-    if request_size > MAX_REQUEST_BODY_SIZE {
+    if request_size > state.config.max_request_size {
         warn!(
             method = %method,
             path = %path,
             request_size_bytes = request_size,
-            max_size = MAX_REQUEST_BODY_SIZE,
+            max_size = state.config.max_request_size,
             "Request rejected: body too large"
         );
         return axum::response::Response::builder()

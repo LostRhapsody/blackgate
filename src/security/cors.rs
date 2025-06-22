@@ -286,10 +286,8 @@ fn is_origin_allowed(config: &CorsConfig, origin: &str) -> bool {
 
     // Check wildcard matches
     for allowed_origin in &config.allowed_origins {
-        if allowed_origin.contains('*') {
-            if origin_matches_pattern(origin, allowed_origin) {
-                return true;
-            }
+        if allowed_origin.contains('*') && origin_matches_pattern(origin, allowed_origin) {
+            return true;
         }
     }
 
@@ -327,10 +325,8 @@ pub fn add_cors_headers(
         if is_origin_allowed(config, origin_str) {
             if config.allow_all_origins && !config.allow_credentials {
                 headers.insert("access-control-allow-origin", HeaderValue::from_static("*"));
-            } else {
-                if let Ok(origin_value) = HeaderValue::from_str(origin_str) {
-                    headers.insert("access-control-allow-origin", origin_value);
-                }
+            } else if let Ok(origin_value) = HeaderValue::from_str(origin_str) {
+                headers.insert("access-control-allow-origin", origin_value);
             }
         }
     } else if config.allow_all_origins && !config.allow_credentials {

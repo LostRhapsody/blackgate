@@ -42,13 +42,12 @@
 //! ```
 
 use crate::security::{
-    self,
     config::{SecurityConfig, SecurityConfigError},
     cors::{CorsValidation, add_cors_headers, create_preflight_response, validate_cors_request},
 };
 use axum::{
     extract::{ConnectInfo, Request},
-    http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri},
+    http::{HeaderName, HeaderValue, StatusCode},
     middleware::Next,
     response::Response,
 };
@@ -60,7 +59,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, warn};
 
 /// Security event types for logging and monitoring
 #[derive(Debug, Clone)]
@@ -100,6 +99,7 @@ pub enum SecurityEvent {
 
 /// Rate limiting tracker for IP addresses
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct RateLimitTracker {
     /// Request counts per minute
     pub requests_per_minute: HashMap<String, (u32, Instant)>,
@@ -109,15 +109,6 @@ pub struct RateLimitTracker {
     pub auth_failures: HashMap<String, (u32, Instant)>,
 }
 
-impl Default for RateLimitTracker {
-    fn default() -> Self {
-        Self {
-            requests_per_minute: HashMap::new(),
-            requests_per_hour: HashMap::new(),
-            auth_failures: HashMap::new(),
-        }
-    }
-}
 
 impl RateLimitTracker {
     /// Check if an IP address is rate limited
@@ -348,15 +339,13 @@ pub async fn request_security_middleware(
     }
 
     // Check for path traversal attempts
-    if security.config.validation.path_traversal_protection {
-        if path.contains("..") || path.contains("//") || path.contains("\\") {
-            security.handle_security_event(SecurityEvent::SuspiciousActivity {
-                ip: ip.clone(),
-                path: path.to_string(),
-                pattern: "Path traversal attempt".to_string(),
-            });
-            return Err(StatusCode::BAD_REQUEST);
-        }
+    if security.config.validation.path_traversal_protection && (path.contains("..") || path.contains("//") || path.contains("\\")) {
+        security.handle_security_event(SecurityEvent::SuspiciousActivity {
+            ip: ip.clone(),
+            path: path.to_string(),
+            pattern: "Path traversal attempt".to_string(),
+        });
+        return Err(StatusCode::BAD_REQUEST);
     }
 
     // Check blocked IPs

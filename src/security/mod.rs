@@ -41,7 +41,7 @@ use crate::security::{
 };
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 /// Main secret manager that coordinates Infisical operations and caching
 #[derive(Clone)]

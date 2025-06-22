@@ -54,6 +54,7 @@ pub const DEFAULT_RATE_LIMIT_BURST: u32 = 10;
 
 /// Comprehensive security configuration for Blackgate
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct SecurityConfig {
     /// Request security settings
     pub request: RequestSecurityConfig,
@@ -279,20 +280,6 @@ pub struct LoggingSecurityConfig {
     pub enable_audit_logging: bool,
 }
 
-impl Default for SecurityConfig {
-    fn default() -> Self {
-        Self {
-            request: RequestSecurityConfig::default(),
-            cors: CorsConfig::default(),
-            rate_limiting: RateLimitingConfig::default(),
-            authentication: AuthenticationConfig::default(),
-            tls: TlsConfig::default(),
-            headers: SecurityHeadersConfig::default(),
-            validation: ValidationConfig::default(),
-            logging: LoggingSecurityConfig::default(),
-        }
-    }
-}
 
 impl Default for RequestSecurityConfig {
     fn default() -> Self {
@@ -554,10 +541,8 @@ impl SecurityConfig {
         }
 
         // Validate TLS config
-        if self.tls.enforce_https {
-            if self.tls.cert_path.is_none() || self.tls.key_path.is_none() {
-                warn!("HTTPS enforcement enabled but TLS cert/key paths not configured");
-            }
+        if self.tls.enforce_https && (self.tls.cert_path.is_none() || self.tls.key_path.is_none()) {
+            warn!("HTTPS enforcement enabled but TLS cert/key paths not configured");
         }
 
         // Validate authentication config
@@ -568,12 +553,10 @@ impl SecurityConfig {
         }
 
         // Validate rate limiting
-        if self.rate_limiting.enabled {
-            if self.rate_limiting.default_rpm == 0 && self.rate_limiting.default_rph == 0 {
-                return Err(SecurityConfigError::ValidationError(
-                    "Rate limiting enabled but no limits configured".to_string(),
-                ));
-            }
+        if self.rate_limiting.enabled && self.rate_limiting.default_rpm == 0 && self.rate_limiting.default_rph == 0 {
+            return Err(SecurityConfigError::ValidationError(
+                "Rate limiting enabled but no limits configured".to_string(),
+            ));
         }
 
         info!("Security configuration validation passed");

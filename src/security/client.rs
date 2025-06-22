@@ -93,7 +93,7 @@ impl InfisicalClient {
 
         // Authenticate and get access token
         infisical_client.authenticate().await?;
-        
+
         info!("Successfully authenticated with Infisical");
         Ok(infisical_client)
     }
@@ -101,7 +101,7 @@ impl InfisicalClient {
     /// Authenticate with Infisical and get access token
     async fn authenticate(&mut self) -> Result<(), SecurityError> {
         let auth_url = format!("{}/api/v1/auth/universal-auth/login", self.config.url);
-        
+
         let auth_request = AuthRequest {
             client_id: self.config.client_id.clone(),
             client_secret: self.config.client_secret.clone(),
@@ -121,7 +121,10 @@ impl InfisicalClient {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            error!("Authentication failed with status {}: {}", status, error_text);
+            error!(
+                "Authentication failed with status {}: {}",
+                status, error_text
+            );
             return Err(SecurityError::AuthenticationError(format!(
                 "Authentication failed: {} - {}",
                 status, error_text
@@ -157,10 +160,7 @@ impl InfisicalClient {
     ) -> Result<SecretReference, SecurityError> {
         info!("Creating secret in Infisical: {}", key);
 
-        let create_url = format!(
-            "{}/api/v3/secrets/raw/{}",
-            self.config.url, key
-        );
+        let create_url = format!("{}/api/v3/secrets/raw/{}", self.config.url, key);
 
         let create_request = CreateSecretRequest {
             secret_name: key.to_string(),
@@ -188,7 +188,10 @@ impl InfisicalClient {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            error!("Failed to create secret {} with status {}: {}", key, status, error_text);
+            error!(
+                "Failed to create secret {} with status {}: {}",
+                key, status, error_text
+            );
             return Err(SecurityError::InfisicalError(format!(
                 "Failed to create secret: {} - {}",
                 status, error_text
@@ -207,10 +210,7 @@ impl InfisicalClient {
     pub async fn get_secret(&self, key: &str) -> Result<String, SecurityError> {
         info!("Fetching secret from Infisical: {}", key);
 
-        let get_url = format!(
-            "{}/api/v3/secrets/raw/{}",
-            self.config.url, key
-        );
+        let get_url = format!("{}/api/v3/secrets/raw/{}", self.config.url, key);
 
         let response = self
             .client
@@ -236,7 +236,10 @@ impl InfisicalClient {
                 )));
             }
             let error_text = response.text().await.unwrap_or_default();
-            error!("Failed to fetch secret {} with status {}: {}", key, status, error_text);
+            error!(
+                "Failed to fetch secret {} with status {}: {}",
+                key, status, error_text
+            );
             return Err(SecurityError::InfisicalError(format!(
                 "Failed to fetch secret: {} - {}",
                 status, error_text
@@ -256,10 +259,7 @@ impl InfisicalClient {
     pub async fn update_secret(&self, key: &str, new_value: &str) -> Result<(), SecurityError> {
         info!("Updating secret in Infisical: {}", key);
 
-        let update_url = format!(
-            "{}/api/v3/secrets/raw/{}",
-            self.config.url, key
-        );
+        let update_url = format!("{}/api/v3/secrets/raw/{}", self.config.url, key);
 
         let update_request = UpdateSecretRequest {
             secret_value: new_value.to_string(),
@@ -285,7 +285,10 @@ impl InfisicalClient {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            error!("Failed to update secret {} with status {}: {}", key, status, error_text);
+            error!(
+                "Failed to update secret {} with status {}: {}",
+                key, status, error_text
+            );
             return Err(SecurityError::InfisicalError(format!(
                 "Failed to update secret: {} - {}",
                 status, error_text
@@ -300,10 +303,7 @@ impl InfisicalClient {
     pub async fn delete_secret(&self, key: &str) -> Result<(), SecurityError> {
         info!("Deleting secret from Infisical: {}", key);
 
-        let delete_url = format!(
-            "{}/api/v3/secrets/raw/{}",
-            self.config.url, key
-        );
+        let delete_url = format!("{}/api/v3/secrets/raw/{}", self.config.url, key);
 
         let response = self
             .client
@@ -323,7 +323,10 @@ impl InfisicalClient {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            error!("Failed to delete secret {} with status {}: {}", key, status, error_text);
+            error!(
+                "Failed to delete secret {} with status {}: {}",
+                key, status, error_text
+            );
             return Err(SecurityError::InfisicalError(format!(
                 "Failed to delete secret: {} - {}",
                 status, error_text
@@ -358,7 +361,10 @@ impl InfisicalClient {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            error!("Failed to list secrets with status {}: {}", status, error_text);
+            error!(
+                "Failed to list secrets with status {}: {}",
+                status, error_text
+            );
             return Err(SecurityError::InfisicalError(format!(
                 "Failed to list secrets: {} - {}",
                 status, error_text

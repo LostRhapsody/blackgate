@@ -53,8 +53,7 @@ pub const DEFAULT_CONNECTION_POOL_SIZE: usize = 100;
 pub const DEFAULT_RATE_LIMIT_BURST: u32 = 10;
 
 /// Comprehensive security configuration for Blackgate
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct SecurityConfig {
     /// Request security settings
     pub request: RequestSecurityConfig,
@@ -279,7 +278,6 @@ pub struct LoggingSecurityConfig {
     /// Enable audit logging
     pub enable_audit_logging: bool,
 }
-
 
 impl Default for RequestSecurityConfig {
     fn default() -> Self {
@@ -553,7 +551,10 @@ impl SecurityConfig {
         }
 
         // Validate rate limiting
-        if self.rate_limiting.enabled && self.rate_limiting.default_rpm == 0 && self.rate_limiting.default_rph == 0 {
+        if self.rate_limiting.enabled
+            && self.rate_limiting.default_rpm == 0
+            && self.rate_limiting.default_rph == 0
+        {
             return Err(SecurityConfigError::ValidationError(
                 "Rate limiting enabled but no limits configured".to_string(),
             ));

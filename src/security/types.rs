@@ -47,7 +47,10 @@ impl SecretReference {
 
     /// Generate a unique identifier for this secret reference
     pub fn to_reference_string(&self) -> String {
-        format!("infisical://{}:{}/{}", self.project_id, self.environment, self.key)
+        format!(
+            "infisical://{}:{}/{}",
+            self.project_id, self.environment, self.key
+        )
     }
 
     /// Parse a reference string back into a SecretReference
@@ -167,7 +170,10 @@ mod tests {
         );
 
         let reference_string = reference.to_reference_string();
-        assert_eq!(reference_string, "infisical://project-123:production/api-key");
+        assert_eq!(
+            reference_string,
+            "infisical://project-123:production/api-key"
+        );
 
         let parsed = SecretReference::from_reference_string(&reference_string).unwrap();
         assert_eq!(parsed.key, reference.key);
@@ -179,7 +185,7 @@ mod tests {
     fn test_secret_value_expiry() {
         let value = SecretValue::with_ttl("secret".to_string(), 1);
         assert!(!value.is_expired());
-        
+
         std::thread::sleep(std::time::Duration::from_secs(2));
         assert!(value.is_expired());
     }

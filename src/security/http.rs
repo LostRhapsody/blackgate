@@ -20,7 +20,6 @@
 //! ```
 
 use std::time::Duration;
-use tracing::warn;
 use url;
 
 /// Default request timeout in seconds
@@ -82,8 +81,6 @@ impl Default for HttpClientConfig {
         }
     }
 }
-
-
 
 /// Validate that a URL is safe to connect to
 pub fn validate_upstream_url(url: &str) -> Result<(), String> {

@@ -559,26 +559,6 @@ pub async fn security_headers_middleware(
     Ok(response)
 }
 
-/// Create a tower layer stack with all security middleware
-// pub fn create_security_layers(
-//     security: SecurityMiddleware,
-// ) -> impl tower::Layer<axum::routing::Router> + Clone {
-//     let security = Arc::new(security);
-
-//     tower::ServiceBuilder::new()
-//         .layer(axum::middleware::from_fn(security_headers_middleware))
-//         .layer(axum::middleware::from_fn({
-//             let security = security.clone();
-//             move |req, next| cors_middleware(security.clone(), req, next)
-//         }))
-//         .layer(axum::middleware::from_fn({
-//             let security = security.clone();
-//             move |conn_info, req, next| {
-//                 request_security_middleware(security.clone(), conn_info, req, next)
-//             }
-//         }))
-// }
-
 /// Cleanup task for security middleware
 pub async fn security_cleanup_task(security: Arc<SecurityMiddleware>) {
     let mut interval = tokio::time::interval(Duration::from_secs(300)); // Run every 5 minutes

@@ -112,8 +112,6 @@ impl CorsConfig {
         self
     }
 
-
-
     /// Set allowed request headers
     pub fn allow_headers(mut self, headers: Vec<&str>) -> Self {
         self.allowed_headers = headers.iter().map(|h| h.to_lowercase()).collect();
@@ -253,8 +251,6 @@ pub fn add_cors_headers(headers: &mut HeaderMap, config: &CorsConfig, origin: Op
     headers.insert("vary", HeaderValue::from_static("Origin"));
 }
 
-
-
 /// Parse CORS configuration from environment variables
 pub fn parse_cors_config_from_env() -> CorsConfig {
     let mut config = CorsConfig::new();
@@ -272,8 +268,6 @@ pub fn parse_cors_config_from_env() -> CorsConfig {
             }
         }
     }
-
-
 
     // Parse allowed headers
     if let Ok(headers_str) = std::env::var("BLACKGATE_CORS_ALLOWED_HEADERS") {
@@ -355,7 +349,10 @@ mod tests {
         let config = CorsConfig::new().allow_origin("https://example.com");
 
         assert!(validate_cors_origin(&config, Some("https://example.com")));
-        assert!(!validate_cors_origin(&config, Some("https://malicious.com")));
+        assert!(!validate_cors_origin(
+            &config,
+            Some("https://malicious.com")
+        ));
         assert!(validate_cors_origin(&config, None));
     }
 

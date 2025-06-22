@@ -49,7 +49,7 @@ use jwt::{create_jwt_config, validate_jwt_token};
 use oauth::{OAuthTokenCache, get_oauth_token};
 use oidc::{create_oidc_config, fetch_oidc_discovery, validate_oidc_token};
 use std::sync::{Arc, Mutex};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info};
 use types::AuthType;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -80,7 +80,7 @@ pub async fn apply_authentication(
                     Ok(builder.header("Authorization", auth_header))
                 } else {
                     log_error_async(
-                        &pool,
+                        pool,
                         ErrorSeverity::Error,
                         "Invalid Basic Auth format for route {}. Expected 'username:password'"
                             .to_string(),
@@ -97,7 +97,7 @@ pub async fn apply_authentication(
                 }
             } else {
                 log_error_async(
-                    &pool,
+                    pool,
                     ErrorSeverity::Error,
                     format!("Missing Basic Auth credentials for route {}", path),
                     Some(context),
@@ -128,7 +128,7 @@ pub async fn apply_authentication(
                                 Ok(secret_value) => secret_value,
                                 Err(e) => {
                                     log_error_async(
-                                        &pool,
+                                        pool,
                                         ErrorSeverity::Critical,
                                         format!("Failed to retrieve API key from Infisical for route {}: {}",
                                         path, e),
@@ -148,7 +148,7 @@ pub async fn apply_authentication(
                             },
                             Err(e) => {
                                 log_error_async(
-                                    &pool,
+                                    pool,
                                     ErrorSeverity::Error,
                                     format!("Failed to retrieve API key from Infisical for route {}: {}",
                                     path, e),
@@ -166,7 +166,7 @@ pub async fn apply_authentication(
                         }
                     } else {
                         log_error_async(
-                            &pool,
+                            pool,
                             ErrorSeverity::Error,
                             format!("Secret manager not configured but secret reference provided for route {}",
                             path),
@@ -188,7 +188,7 @@ pub async fn apply_authentication(
                 Ok(builder.header("Authorization", api_key))
             } else {
                 log_error_async(
-                    &pool,
+                    pool,
                     ErrorSeverity::Error,
                     format!("Missing API key for route {}", path),
                     Some(context),
@@ -243,7 +243,7 @@ pub async fn apply_authentication(
                             }
                             Err(e) => {
                                 log_error_async(
-                                    &pool,
+                                    pool,
                                     ErrorSeverity::Error,
                                     format!("OAuth token error for route {}: {:?}", path, e),
                                     Some(context),
@@ -265,7 +265,7 @@ pub async fn apply_authentication(
                 Ok(builder.header("Authorization", format!("Bearer {}", token)))
             } else {
                 log_error_async(
-                    &pool,
+                    pool,
                     ErrorSeverity::Error,
                     format!("Missing OAuth configuration for route {}", path),
                     Some(context),
@@ -288,7 +288,7 @@ pub async fn apply_authentication(
                 Ok(config) => config,
                 Err(e) => {
                     log_error_async(
-                        &pool,
+                        pool,
                         ErrorSeverity::Error,
                         format!("Invalid JWT configuration for route {}: {}", path, e),
                         Some(context),
@@ -326,7 +326,7 @@ pub async fn apply_authentication(
                     }
                     Err(e) => {
                         log_error_async(
-                            &pool,
+                            pool,
                             ErrorSeverity::Error,
                             format!("JWT token validation failed for route {}: {}", path, e),
                             Some(context),
@@ -344,7 +344,7 @@ pub async fn apply_authentication(
             } else {
                 // No token provided in Authorization header
                 log_error_async(
-                    &pool,
+                    pool,
                     ErrorSeverity::Warning,
                     format!(
                         "No JWT token provided in Authorization header for route {}",
@@ -370,7 +370,7 @@ pub async fn apply_authentication(
                 Ok(config) => config,
                 Err(e) => {
                     log_error_async(
-                        &pool,
+                        pool,
                         ErrorSeverity::Error,
                         format!("Invalid OIDC configuration for route {}: {}", path, e),
                         Some(context),
@@ -402,7 +402,7 @@ pub async fn apply_authentication(
                     Ok(doc) => doc,
                     Err(e) => {
                         log_error_async(
-                            &pool,
+                            pool,
                             ErrorSeverity::Error,
                             format!(
                                 "Failed to fetch OIDC discovery document for route {}: {}",
@@ -430,7 +430,7 @@ pub async fn apply_authentication(
                     }
                     Err(e) => {
                         log_error_async(
-                            &pool,
+                            pool,
                             ErrorSeverity::Error,
                             format!("OIDC token validation failed for route {}: {}", path, e),
                             Some(context),
@@ -448,7 +448,7 @@ pub async fn apply_authentication(
             } else {
                 // No token provided in Authorization header
                 log_error_async(
-                    &pool,
+                    pool,
                     ErrorSeverity::Warning,
                     format!(
                         "No OIDC token provided in Authorization header for route {}",

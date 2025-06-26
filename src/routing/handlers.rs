@@ -67,6 +67,7 @@ use crate::{
     cache::{CachedResponse, UpstreamResponseCacheKey},
     database::queries,
     health::HealthStatus,
+    logging::errors::{ErrorContext, ErrorSeverity, log_error_async},
     metrics::{RequestMetrics, store_metrics},
     rate_limiter::check_rate_limit,
     security::http::validate_upstream_url,
@@ -308,6 +309,7 @@ pub async fn handle_request_core(
     body: Option<String>,
     auth_header: Option<String>,
 ) -> axum::response::Response {
+    let context = ErrorContext::new().with_route(path.to_string());
     // Validate path length to prevent path traversal and DoS attacks
     if path.len() > state.config.max_path_length {
         warn!(
@@ -677,26 +679,6 @@ pub async fn handle_request_core(
         default_oidc_scope: route_config.default_oidc_scope,
     };
 
-    // Validate upstream URL for security
-    if let Err(validation_error) = validate_upstream_url(&auth_route_config.upstream) {
-        error!(
-            request_id = %metrics.id,
-            upstream = %auth_route_config.upstream,
-            error = %validation_error,
-            "Upstream URL validation failed"
-        );
-
-        metrics.set_error(format!("Invalid upstream URL: {}", validation_error));
-        store_metrics(state.db.clone(), metrics);
-
-        return axum::response::Response::builder()
-            .status(502)
-            .body(axum::body::Body::from(
-                "Bad Gateway: Invalid upstream configuration",
-            ))
-            .unwrap();
-    }
-
     info!(
         request_id = %metrics.id,
         upstream = %route_config.upstream,
@@ -750,12 +732,16 @@ pub async fn handle_request_core(
     let response = match builder.send().await {
         Ok(response) => response,
         Err(e) => {
-            error!(
-                request_id = %metrics.id,
-                upstream = %auth_route_config.upstream,
-                error = %e,
-                "Upstream request failed"
-            );
+            log_error_async(
+                &state.db,
+                ErrorSeverity::Critical,
+                format!("Upstream request failed: {}", e),
+                Some(context),
+                file!(),
+                line!(),
+                Some("handle_request_core".to_string()),
+            )
+            .await;
 
             metrics.set_error(format!("Upstream request failed: {}", e));
             store_metrics(state.db.clone(), metrics);

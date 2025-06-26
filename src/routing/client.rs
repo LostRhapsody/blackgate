@@ -35,10 +35,9 @@ pub fn create_secure_client_with_config(
     info!("Creating secure HTTP client with timeouts and security settings");
 
     let mut builder = ClientBuilder::new()
-        // Timeout configurations
+        // Timeout configurations - only use main timeout to avoid conflicts
         .timeout(config.request_timeout)
         .connect_timeout(config.connect_timeout)
-        .read_timeout(config.read_timeout)
         // Security configurations
         .user_agent(&config.user_agent)
         .redirect(reqwest::redirect::Policy::limited(config.max_redirects))
@@ -59,9 +58,10 @@ pub fn create_secure_client_with_config(
         builder = builder.danger_accept_invalid_certs(true);
     }
 
-    // HTTP/2 configuration
+    // HTTP/2 configuration - use adaptive instead of prior knowledge
     if config.enable_http2 {
-        builder = builder.http2_prior_knowledge();
+        // Let reqwest negotiate HTTP version automatically
+        builder = builder.http2_adaptive_window(true);
     } else {
         builder = builder.http1_only();
     }
